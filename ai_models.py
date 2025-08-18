@@ -80,11 +80,25 @@ class DisasterPredictionService:
             wildfire_wind = sigmoid((ws - 5.0) / 3.0)
             predictions['wildfire'] = clamp(0.6 * wildfire_temp * wildfire_dry + 0.4 * wildfire_wind * wildfire_dry)
 
-        # Storm: wind + low pressure + clouds
-        storm_wind = sigmoid((ws - 8.0) / 3.0)
-        storm_press = sigmoid((1013.0 - pr) / 6.0)
-        storm_cloud = sigmoid((cc - 50.0) / 10.0)
-        predictions['storm'] = clamp(0.6 * storm_wind + 0.3 * storm_press + 0.1 * storm_cloud)
+        # Storm: prefer trained model if available
+        st = self.models.get('storm')
+        if isinstance(st, dict) and 'clf' in st and 'scaler' in st:
+            try:
+                X = [[ws, pr, cc, pcp]]
+                Xs = st['scaler'].transform(X)
+                proba = st['clf'].predict_proba(Xs)[0][1]
+                predictions['storm'] = clamp(float(proba))
+            except Exception as e:
+                logger.warning(f"Storm model inference failed, fallback heuristic: {e}")
+                storm_wind = sigmoid((ws - 8.0) / 3.0)
+                storm_press = sigmoid((1013.0 - pr) / 6.0)
+                storm_cloud = sigmoid((cc - 50.0) / 10.0)
+                predictions['storm'] = clamp(0.6 * storm_wind + 0.3 * storm_press + 0.1 * storm_cloud)
+        else:
+            storm_wind = sigmoid((ws - 8.0) / 3.0)
+            storm_press = sigmoid((1013.0 - pr) / 6.0)
+            storm_cloud = sigmoid((cc - 50.0) / 10.0)
+            predictions['storm'] = clamp(0.6 * storm_wind + 0.3 * storm_press + 0.1 * storm_cloud)
 
         # Earthquake (clamped below unless explicitly allowed)
         predictions['earthquake'] = 0.05
