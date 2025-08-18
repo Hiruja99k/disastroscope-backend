@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 import logging
 import asyncio
 from contextlib import suppress
+import joblib
 
 # Load environment variables from .env (must happen BEFORE importing modules that read env)
 load_dotenv()
@@ -20,6 +21,7 @@ from weather_service import weather_service, WeatherData
 from ai_models import ai_prediction_service
 from openfema_service import openfema_service, FEMADeclaration
 from eonet_service import eonet_service, EONETEvent
+from training.wildfire_trainer import train_and_save as train_wildfire
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -508,7 +510,22 @@ def predict_disaster():
 def train_models():
     """Train AI models"""
     try:
-        ai_prediction_service.train_models(epochs=50)  # Reduced epochs for faster training
+        # Train wildfire with FIRMS + ERA5; others remain heuristics for now
+        token = os.getenv('FIRMS_API_TOKEN')
+        model_dir = os.path.join(os.path.dirname(__file__), 'models')
+        if token:
+            train_wildfire(model_dir, token, days=7)
+        # Reload into memory
+        try:
+            wf_model = os.path.join(model_dir, 'wildfire_model.joblib')
+            wf_scaler = os.path.join(model_dir, 'wildfire_scaler.joblib')
+            if os.path.exists(wf_model) and os.path.exists(wf_scaler):
+                ai_prediction_service.models['wildfire'] = {
+                    'clf': joblib.load(wf_model),
+                    'scaler': joblib.load(wf_scaler)
+                }
+        except Exception as e:
+            logger.warning(f"Model reload failed: {e}")
         return jsonify({'message': 'Models trained successfully'})
     except Exception as e:
         logger.error(f"Error training models: {e}")

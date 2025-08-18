@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Dict
+import joblib
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,18 @@ class DisasterPredictionService:
             'landslide': 'Rule-based Model',
             'drought': 'Rule-based Model'
         }
+        self.model_dir = os.path.join(os.path.dirname(__file__), 'models')
+        # Try load wildfire model if exists
+        try:
+            wf_model = os.path.join(self.model_dir, 'wildfire_model.joblib')
+            wf_scaler = os.path.join(self.model_dir, 'wildfire_scaler.joblib')
+            if os.path.exists(wf_model) and os.path.exists(wf_scaler):
+                self.models['wildfire'] = {
+                    'clf': joblib.load(wf_model),
+                    'scaler': joblib.load(wf_scaler)
+                }
+        except Exception as e:
+            logger.warning(f"Failed to load wildfire model: {e}")
     
     def predict_disaster_risks(self, weather_data: Dict) -> Dict[str, float]:
         """Predict risks for all disaster types using continuous, weather-based scoring.
@@ -47,11 +60,25 @@ class DisasterPredictionService:
         flood_cloud = sigmoid((cc - 60.0) / 10.0)
         predictions['flood'] = clamp(0.7 * flood_precip + 0.2 * flood_humid + 0.1 * flood_cloud)
 
-        # Wildfire: high temp + low humidity + some wind
-        wildfire_temp = sigmoid((t - 32.0) / 4.0)
-        wildfire_dry = sigmoid((30.0 - h) / 6.0)
-        wildfire_wind = sigmoid((ws - 5.0) / 3.0)
-        predictions['wildfire'] = clamp(0.6 * wildfire_temp * wildfire_dry + 0.4 * wildfire_wind * wildfire_dry)
+        # Wildfire: prefer trained model if available, else heuristic
+        wf = self.models.get('wildfire')
+        if isinstance(wf, dict) and 'clf' in wf and 'scaler' in wf:
+            try:
+                X = [[t, h, ws, pcp, cc]]
+                Xs = wf['scaler'].transform(X)
+                proba = wf['clf'].predict_proba(Xs)[0][1]
+                predictions['wildfire'] = clamp(float(proba))
+            except Exception as e:
+                logger.warning(f"Wildfire model inference failed, fallback heuristic: {e}")
+                wildfire_temp = sigmoid((t - 32.0) / 4.0)
+                wildfire_dry = sigmoid((30.0 - h) / 6.0)
+                wildfire_wind = sigmoid((ws - 5.0) / 3.0)
+                predictions['wildfire'] = clamp(0.6 * wildfire_temp * wildfire_dry + 0.4 * wildfire_wind * wildfire_dry)
+        else:
+            wildfire_temp = sigmoid((t - 32.0) / 4.0)
+            wildfire_dry = sigmoid((30.0 - h) / 6.0)
+            wildfire_wind = sigmoid((ws - 5.0) / 3.0)
+            predictions['wildfire'] = clamp(0.6 * wildfire_temp * wildfire_dry + 0.4 * wildfire_wind * wildfire_dry)
 
         # Storm: wind + low pressure + clouds
         storm_wind = sigmoid((ws - 8.0) / 3.0)
