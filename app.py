@@ -34,7 +34,9 @@ CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:8080",
     "https://disastroscope.site",
     "https://www.disastroscope.site",
-    "https://api.disastroscope.site"
+    "https://api.disastroscope.site",
+    "https://*.vercel.app",
+    "https://*.vercel.dev"
 ]}})
 socketio = SocketIO(app, cors_allowed_origins=[
     "http://localhost:3000",
@@ -42,7 +44,9 @@ socketio = SocketIO(app, cors_allowed_origins=[
     "http://localhost:8080", 
     "https://disastroscope.site",
     "https://www.disastroscope.site",
-    "https://api.disastroscope.site"
+    "https://api.disastroscope.site",
+    "https://*.vercel.app",
+    "https://*.vercel.dev"
 ])
 
 # In-memory storage (replace with database in production)

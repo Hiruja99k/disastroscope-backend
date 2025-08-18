@@ -1,7 +1,11 @@
 import logging
+import os
 from typing import Dict
 
 logger = logging.getLogger(__name__)
+
+EARTHQUAKE_RISK_MULTIPLIER: float = float(os.getenv('EARTHQUAKE_RISK_MULTIPLIER', '0.05'))
+ALLOW_EARTHQUAKE_PREDICTIONS: bool = os.getenv('ALLOW_EARTHQUAKE_PREDICTIONS', 'false').lower() == 'true'
 
 class DisasterPredictionService:
     """Service for managing disaster prediction models"""
@@ -18,56 +22,40 @@ class DisasterPredictionService:
         }
     
     def predict_disaster_risks(self, weather_data: Dict) -> Dict[str, float]:
-        """Predict risks for all disaster types using rule-based logic"""
-        predictions = {}
-        
-        # Extract weather parameters
-        temperature = weather_data.get('temperature', 20)
-        humidity = weather_data.get('humidity', 50)
-        precipitation = weather_data.get('precipitation', 0)
-        wind_speed = weather_data.get('wind_speed', 0)
-        pressure = weather_data.get('pressure', 1013)
-        
-        # Flood risk calculation
-        flood_risk = min(1.0, precipitation / 50.0) if precipitation > 0 else 0.0
-        predictions['flood'] = flood_risk
-        
-        # Wildfire risk calculation
-        if temperature > 30 and humidity < 30:
-            wildfire_risk = min(1.0, (temperature - 30) / 20.0)
-        else:
-            wildfire_risk = 0.0
-        predictions['wildfire'] = wildfire_risk
-        
-        # Storm risk calculation
-        storm_risk = min(1.0, wind_speed / 50.0) if wind_speed > 20 else 0.0
-        predictions['storm'] = storm_risk
-        
-        # Earthquake risk (low probability, not weather-dependent)
-        earthquake_risk = 0.05  # Base seismic risk
-        predictions['earthquake'] = earthquake_risk
-        
-        # Tornado risk
-        if wind_speed > 30 and humidity > 70:
-            tornado_risk = min(1.0, (wind_speed - 30) / 40.0)
-        else:
-            tornado_risk = 0.0
-        predictions['tornado'] = tornado_risk
-        
-        # Landslide risk
-        if precipitation > 20 and humidity > 80:
-            landslide_risk = min(1.0, precipitation / 100.0)
-        else:
-            landslide_risk = 0.0
-        predictions['landslide'] = landslide_risk
-        
-        # Drought risk
-        if humidity < 20 and precipitation < 1:
-            drought_risk = min(1.0, (20 - humidity) / 20.0)
-        else:
-            drought_risk = 0.0
-        predictions['drought'] = drought_risk
-        
+        """Predict risks for all disaster types using rule-based logic (fast and reliable)."""
+        t = float(weather_data.get('temperature', 20))
+        h = float(weather_data.get('humidity', 50))
+        pcp = float(weather_data.get('precipitation', 0))
+        ws = float(weather_data.get('wind_speed', 0))
+        pr = float(weather_data.get('pressure', 1013))
+        cc = float(weather_data.get('cloud_cover', 0))
+
+        def clamp(x: float) -> float:
+            return max(0.0, min(1.0, x))
+
+        predictions: Dict[str, float] = {}
+        # Flood
+        predictions['flood'] = clamp((pcp / 50.0) * (0.5 + cc / 200.0)) if pcp > 0 else 0.0
+        # Wildfire
+        predictions['wildfire'] = clamp(((t - 30.0) / 20.0) * (1.0 - h / 100.0)) if (t > 30 and h < 35) else 0.0
+        # Storm
+        predictions['storm'] = clamp((ws / 60.0) * (1.0 - min(pr, 1100.0) / 1100.0) * (0.5 + cc / 200.0))
+        # Earthquake (clamped below unless explicitly allowed)
+        predictions['earthquake'] = 0.05
+        # Tornado
+        predictions['tornado'] = clamp(((ws - 25.0) / 40.0) * (h / 100.0)) if (ws > 25 and h > 60 and cc > 60) else 0.0
+        # Landslide
+        predictions['landslide'] = clamp(pcp / 100.0) if (pcp > 20 and h > 70) else 0.0
+        # Drought
+        predictions['drought'] = clamp(((28.0 - min(h, 28.0)) / 28.0) * (1.0 - min(pcp, 10.0) / 10.0)) if (h < 25 and pcp < 1 and t > 28) else 0.0
+
+        # Clamp earthquake unless allowed
+        if not ALLOW_EARTHQUAKE_PREDICTIONS:
+            try:
+                predictions['earthquake'] = max(0.0, min(0.05, predictions['earthquake'] * EARTHQUAKE_RISK_MULTIPLIER))
+            except Exception:
+                predictions['earthquake'] = 0.0
+
         return predictions
     
     def train_models(self, epochs: int = 50):
