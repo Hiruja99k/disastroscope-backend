@@ -54,11 +54,25 @@ class DisasterPredictionService:
             return 1.0 / (1.0 + math.exp(-x))
 
         predictions: Dict[str, float] = {}
-        # Flood: precipitation + humidity/clouds
-        flood_precip = sigmoid((pcp - 4.0) / 3.0)
-        flood_humid = sigmoid((h - 70.0) / 8.0)
-        flood_cloud = sigmoid((cc - 60.0) / 10.0)
-        predictions['flood'] = clamp(0.7 * flood_precip + 0.2 * flood_humid + 0.1 * flood_cloud)
+        # Flood: prefer trained model if available
+        fl = self.models.get('flood')
+        if isinstance(fl, dict) and 'clf' in fl and 'scaler' in fl:
+            try:
+                X = [[pcp, pr, t, ws]]
+                Xs = fl['scaler'].transform(X)
+                proba = fl['clf'].predict_proba(Xs)[0][1]
+                predictions['flood'] = clamp(float(proba))
+            except Exception as e:
+                logger.warning(f"Flood model inference failed, fallback heuristic: {e}")
+                flood_precip = sigmoid((pcp - 4.0) / 3.0)
+                flood_humid = sigmoid((h - 70.0) / 8.0)
+                flood_cloud = sigmoid((cc - 60.0) / 10.0)
+                predictions['flood'] = clamp(0.7 * flood_precip + 0.2 * flood_humid + 0.1 * flood_cloud)
+        else:
+            flood_precip = sigmoid((pcp - 4.0) / 3.0)
+            flood_humid = sigmoid((h - 70.0) / 8.0)
+            flood_cloud = sigmoid((cc - 60.0) / 10.0)
+            predictions['flood'] = clamp(0.7 * flood_precip + 0.2 * flood_humid + 0.1 * flood_cloud)
 
         # Wildfire: prefer trained model if available, else heuristic
         wf = self.models.get('wildfire')

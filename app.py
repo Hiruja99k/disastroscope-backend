@@ -23,6 +23,7 @@ from openfema_service import openfema_service, FEMADeclaration
 from eonet_service import eonet_service, EONETEvent
 from training.wildfire_trainer import train_and_save as train_wildfire
 from training.storm_trainer import train_and_save as train_storm
+from training.flood_trainer import train_and_save as train_flood
 from hazard_services import get_earthquake_hazard
 
 # Configure logging
@@ -519,6 +520,8 @@ def train_models():
             train_wildfire(model_dir, token, days=7)
         # Train storm model (uses ERA5 wind/pressure grid sampling)
         train_storm(model_dir, days=7)
+        # Train flood model (global GDACS proxy + ERA5)
+        train_flood(model_dir, days=10)
         # Reload into memory
         try:
             wf_model = os.path.join(model_dir, 'wildfire_model.joblib')
@@ -534,6 +537,13 @@ def train_models():
                 ai_prediction_service.models['storm'] = {
                     'clf': joblib.load(st_model),
                     'scaler': joblib.load(st_scaler)
+                }
+            fl_model = os.path.join(model_dir, 'flood_model.joblib')
+            fl_scaler = os.path.join(model_dir, 'flood_scaler.joblib')
+            if os.path.exists(fl_model) and os.path.exists(fl_scaler):
+                ai_prediction_service.models['flood'] = {
+                    'clf': joblib.load(fl_model),
+                    'scaler': joblib.load(fl_scaler)
                 }
         except Exception as e:
             logger.warning(f"Model reload failed: {e}")
