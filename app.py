@@ -26,6 +26,7 @@ from training.storm_trainer import train_and_save as train_storm
 from training.flood_trainer import train_and_save as train_flood
 from training.landslide_trainer import train_and_save as train_landslide
 from training.drought_trainer import train_and_save as train_drought
+from source_services import fetch_gdacs_events_near, fetch_firms_count_near, fetch_openaq_near
 from hazard_services import get_earthquake_hazard
 
 # Configure logging
@@ -438,7 +439,23 @@ def analyze_location_by_coords():
             'disaster_risks': preds,
             'forecast': (forecast or [])[:8],
             'analysis_timestamp': datetime.now(timezone.utc).isoformat(),
-            'risk_summary': _generate_risk_summary(preds, weather_dict)
+            'risk_summary': _generate_risk_summary(preds, weather_dict),
+            'sources': {
+                'gdacs_nearby': fetch_gdacs_events_near(latf, lonf, days=10, radius_km=300.0),
+                'firms_recent_count': fetch_firms_count_near(latf, lonf, days=7, radius_km=50.0, token=os.getenv('FIRMS_API_TOKEN')),
+                'air_quality': fetch_openaq_near(latf, lonf, radius_m=15000)
+            },
+            'confidence': {
+                'model': 'hybrid-ml',
+                'coverage': {
+                    'wildfire': 'ml' if isinstance(ai_prediction_service.models.get('wildfire'), dict) else 'heuristic',
+                    'storm': 'ml' if isinstance(ai_prediction_service.models.get('storm'), dict) else 'heuristic',
+                    'flood': 'ml' if isinstance(ai_prediction_service.models.get('flood'), dict) else 'heuristic',
+                    'landslide': 'ml' if isinstance(ai_prediction_service.models.get('landslide'), dict) else 'heuristic',
+                    'drought': 'ml' if isinstance(ai_prediction_service.models.get('drought'), dict) else 'heuristic',
+                    'earthquake': 'data-driven'
+                }
+            }
         }
         return jsonify(analysis)
     except Exception as e:
