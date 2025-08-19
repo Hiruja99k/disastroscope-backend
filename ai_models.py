@@ -123,16 +123,43 @@ class DisasterPredictionService:
         tor_cloud = sigmoid((cc - 60.0) / 8.0)
         predictions['tornado'] = clamp(tor_wind * tor_humid * tor_cloud)
 
-        # Landslide: heavy precipitation + very humid
-        land_precip = sigmoid((pcp - 10.0) / 5.0)
-        land_humid = sigmoid((h - 75.0) / 6.0)
-        predictions['landslide'] = clamp(land_precip * land_humid)
+        # Landslide: prefer trained model if available
+        ls = self.models.get('landslide')
+        if isinstance(ls, dict) and 'clf' in ls and 'scaler' in ls:
+            try:
+                X = [[pcp, h, t]]
+                Xs = ls['scaler'].transform(X)
+                proba = ls['clf'].predict_proba(Xs)[0][1]
+                predictions['landslide'] = clamp(float(proba))
+            except Exception as e:
+                logger.warning(f"Landslide model inference failed, fallback heuristic: {e}")
+                land_precip = sigmoid((pcp - 10.0) / 5.0)
+                land_humid = sigmoid((h - 75.0) / 6.0)
+                predictions['landslide'] = clamp(land_precip * land_humid)
+        else:
+            land_precip = sigmoid((pcp - 10.0) / 5.0)
+            land_humid = sigmoid((h - 75.0) / 6.0)
+            predictions['landslide'] = clamp(land_precip * land_humid)
 
-        # Drought: hot + very dry + little precip
-        dr_temp = sigmoid((t - 30.0) / 4.0)
-        dr_dry = sigmoid((25.0 - h) / 5.0)
-        dr_precip = sigmoid((1.0 - min(pcp, 1.0)) / 0.2)
-        predictions['drought'] = clamp(dr_temp * dr_dry * dr_precip)
+        # Drought: prefer trained model if available
+        dr = self.models.get('drought')
+        if isinstance(dr, dict) and 'clf' in dr and 'scaler' in dr:
+            try:
+                X = [[t, pcp, h]]
+                Xs = dr['scaler'].transform(X)
+                proba = dr['clf'].predict_proba(Xs)[0][1]
+                predictions['drought'] = clamp(float(proba))
+            except Exception as e:
+                logger.warning(f"Drought model inference failed, fallback heuristic: {e}")
+                dr_temp = sigmoid((t - 30.0) / 4.0)
+                dr_dry = sigmoid((25.0 - h) / 5.0)
+                dr_precip = sigmoid((1.0 - min(pcp, 1.0)) / 0.2)
+                predictions['drought'] = clamp(dr_temp * dr_dry * dr_precip)
+        else:
+            dr_temp = sigmoid((t - 30.0) / 4.0)
+            dr_dry = sigmoid((25.0 - h) / 5.0)
+            dr_precip = sigmoid((1.0 - min(pcp, 1.0)) / 0.2)
+            predictions['drought'] = clamp(dr_temp * dr_dry * dr_precip)
 
         # Clamp earthquake unless allowed
         if not ALLOW_EARTHQUAKE_PREDICTIONS:

@@ -24,6 +24,8 @@ from eonet_service import eonet_service, EONETEvent
 from training.wildfire_trainer import train_and_save as train_wildfire
 from training.storm_trainer import train_and_save as train_storm
 from training.flood_trainer import train_and_save as train_flood
+from training.landslide_trainer import train_and_save as train_landslide
+from training.drought_trainer import train_and_save as train_drought
 from hazard_services import get_earthquake_hazard
 
 # Configure logging
@@ -33,26 +35,14 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 # Allow all localhost ports (e.g., 3000, 5173, 8080) and any origin for API routes
-CORS(app, resources={r"/api/*": {"origins": [
-    "http://localhost:3000",
-    "http://localhost:5173", 
-    "http://localhost:8080",
-    "https://disastroscope.site",
-    "https://www.disastroscope.site",
-    "https://api.disastroscope.site",
-    "https://*.vercel.app",
-    "https://*.vercel.dev"
-]}})
-socketio = SocketIO(app, cors_allowed_origins=[
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8080", 
-    "https://disastroscope.site",
-    "https://www.disastroscope.site",
-    "https://api.disastroscope.site",
-    "https://*.vercel.app",
-    "https://*.vercel.dev"
-])
+# Loosen CORS for API routes to avoid preflight failures from Vercel
+CORS(app, resources={r"/api/*": {
+    "origins": "*",
+    "methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"],
+    "max_age": 600
+}})
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # In-memory storage (replace with database in production)
 disaster_events = []
@@ -374,6 +364,102 @@ def _generate_risk_summary(predictions: Dict[str, float], weather: Dict) -> str:
     
     return summary
 
+# Helper: reverse geocode coordinates to a friendly name
+def reverse_geocode_osm(lat: float, lon: float) -> str:
+    try:
+        import requests as http
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            'format': 'json',
+            'lat': lat,
+            'lon': lon,
+            'zoom': 12,
+            'addressdetails': 1,
+        }
+        headers = {'User-Agent': 'DisastroScope/1.0 (contact: support@disastroscope.local)'}
+        r = http.get(url, params=params, headers=headers, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            addr = data.get('address') or {}
+            city = addr.get('city') or addr.get('town') or addr.get('village') or addr.get('hamlet') or ''
+            state = addr.get('state') or addr.get('province') or ''
+            country = addr.get('country') or ''
+            name = ", ".join([p for p in [city, state, country] if p])
+            return name or data.get('display_name') or f"{lat:.4f}, {lon:.4f}"
+    except Exception:
+        pass
+    return f"{lat:.4f}, {lon:.4f}"
+
+@app.route('/api/location/analyze/coords', methods=['POST', 'OPTIONS'])
+def analyze_location_by_coords():
+    """Analyze a location by exact coordinates for disaster risks and weather data."""
+    data = request.get_json() or {}
+    lat = data.get('lat', None)
+    lon = data.get('lon', None)
+    units = data.get('units', 'metric')
+    if lat is None or lon is None:
+        return jsonify({'error': 'lat and lon are required'}), 400
+    try:
+        latf = float(lat)
+        lonf = float(lon)
+    except Exception:
+        return jsonify({'error': 'invalid coordinates'}), 400
+
+    try:
+        # Reverse geocode for display name
+        location_name = reverse_geocode_osm(latf, lonf)
+        # Fetch weather
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        weather = loop.run_until_complete(weather_service.get_current_weather(latf, lonf, location_name, units))
+        if not weather:
+            loop.close()
+            return jsonify({'error': 'weather unavailable'}), 502
+        weather_dict = {
+            'temperature': weather.temperature,
+            'humidity': weather.humidity,
+            'pressure': weather.pressure,
+            'wind_speed': weather.wind_speed,
+            'wind_direction': weather.wind_direction,
+            'precipitation': weather.precipitation,
+            'visibility': weather.visibility,
+            'cloud_cover': weather.cloud_cover
+        }
+        preds = ai_prediction_service.predict_disaster_risks(weather_dict)
+        forecast = loop.run_until_complete(weather_service.get_weather_forecast(latf, lonf, 5, units))
+        loop.close()
+        analysis = {
+            'location': {
+                'name': location_name,
+                'coordinates': {'lat': latf, 'lng': lonf},
+                'geocoding_confidence': 'high'
+            },
+            'current_weather': weather_dict,
+            'disaster_risks': preds,
+            'forecast': (forecast or [])[:8],
+            'analysis_timestamp': datetime.now(timezone.utc).isoformat(),
+            'risk_summary': _generate_risk_summary(preds, weather_dict)
+        }
+        return jsonify(analysis)
+    except Exception as e:
+        logger.error(f"Error in coordinate analysis: {e}")
+        return jsonify({'error': 'analysis failed'}), 500
+
+# Explicitly handle CORS preflight for all API routes
+@app.before_request
+def handle_cors_preflight():
+    from flask import make_response
+    if request.method == 'OPTIONS' and request.path.startswith('/api/'):
+        resp = make_response()
+        origin = request.headers.get('Origin', '*')
+        req_headers = request.headers.get('Access-Control-Request-Headers', 'Content-Type, Authorization')
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Vary'] = 'Origin'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = req_headers
+        resp.headers['Access-Control-Max-Age'] = '600'
+        return resp
+
 @app.route('/api/events')
 def get_events():
     """Get all disaster events"""
@@ -522,6 +608,10 @@ def train_models():
         train_storm(model_dir, days=7)
         # Train flood model (global GDACS proxy + ERA5)
         train_flood(model_dir, days=10)
+        # Train landslide model (global GDACS proxy + ERA5)
+        train_landslide(model_dir, days=14)
+        # Train drought model (global ERA5 proxy)
+        train_drought(model_dir)
         # Reload into memory
         try:
             wf_model = os.path.join(model_dir, 'wildfire_model.joblib')
@@ -544,6 +634,20 @@ def train_models():
                 ai_prediction_service.models['flood'] = {
                     'clf': joblib.load(fl_model),
                     'scaler': joblib.load(fl_scaler)
+                }
+            ls_model = os.path.join(model_dir, 'landslide_model.joblib')
+            ls_scaler = os.path.join(model_dir, 'landslide_scaler.joblib')
+            if os.path.exists(ls_model) and os.path.exists(ls_scaler):
+                ai_prediction_service.models['landslide'] = {
+                    'clf': joblib.load(ls_model),
+                    'scaler': joblib.load(ls_scaler)
+                }
+            dr_model = os.path.join(model_dir, 'drought_model.joblib')
+            dr_scaler = os.path.join(model_dir, 'drought_scaler.joblib')
+            if os.path.exists(dr_model) and os.path.exists(dr_scaler):
+                ai_prediction_service.models['drought'] = {
+                    'clf': joblib.load(dr_model),
+                    'scaler': joblib.load(dr_scaler)
                 }
         except Exception as e:
             logger.warning(f"Model reload failed: {e}")
