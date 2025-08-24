@@ -407,16 +407,25 @@ class AdvancedDisasterPredictionService:
                 # Train ensemble models
                 ensemble_models = {}
                 
-                # Random Forest
-                if HYPERPARAMETER_OPTIMIZATION:
-                    rf_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'random_forest')
-                    rf_model = RandomForestClassifier(**rf_params, random_state=42)
-                else:
-                    rf_model = RandomForestClassifier(n_estimators=500, max_depth=10, random_state=42)
+                # Random Forest (always train this one)
+                try:
+                    if HYPERPARAMETER_OPTIMIZATION:
+                        rf_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'random_forest')
+                        rf_model = RandomForestClassifier(**rf_params, random_state=42)
+                    else:
+                        rf_model = RandomForestClassifier(n_estimators=500, max_depth=10, random_state=42)
                     rf_model.fit(X_train_scaled, y_train)
                     ensemble_models['random_forest'] = rf_model
+                    logger.info(f"Random Forest trained successfully for {hazard_type}")
+                except Exception as e:
+                    logger.error(f"Random Forest training failed for {hazard_type}: {e}")
+                    # Create a simple fallback model
+                    rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+                    rf_model.fit(X_train_scaled, y_train)
+                    ensemble_models['random_forest'] = rf_model
+                    logger.info(f"Fallback Random Forest created for {hazard_type}")
                 
-                # XGBoost
+                # XGBoost (optional)
                 if XGBOOST_AVAILABLE:
                     try:
                         if HYPERPARAMETER_OPTIMIZATION:
@@ -426,10 +435,11 @@ class AdvancedDisasterPredictionService:
                             xgb_model = xgb.XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
                         xgb_model.fit(X_train_scaled, y_train)
                         ensemble_models['xgboost'] = xgb_model
+                        logger.info(f"XGBoost trained successfully for {hazard_type}")
                     except Exception as e:
                         logger.warning(f"XGBoost training failed for {hazard_type}: {e}")
                 
-                # LightGBM
+                # LightGBM (optional)
                 if LIGHTGBM_AVAILABLE:
                     try:
                         if HYPERPARAMETER_OPTIMIZATION:
@@ -439,10 +449,11 @@ class AdvancedDisasterPredictionService:
                             lgb_model = lgb.LGBMClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
                         lgb_model.fit(X_train_scaled, y_train)
                         ensemble_models['lightgbm'] = lgb_model
+                        logger.info(f"LightGBM trained successfully for {hazard_type}")
                     except Exception as e:
                         logger.warning(f"LightGBM training failed for {hazard_type}: {e}")
                 
-                # Deep Neural Network
+                # Deep Neural Network (optional)
                 if DEEP_LEARNING_ENABLED:
                     try:
                         dnn_model = self.create_deep_neural_network(X_train_scaled.shape[1])
@@ -458,15 +469,28 @@ class AdvancedDisasterPredictionService:
                             verbose=0
                         )
                         ensemble_models['deep_neural_network'] = dnn_model
+                        logger.info(f"Deep Neural Network trained successfully for {hazard_type}")
                     except Exception as e:
                         logger.warning(f"Deep learning training failed for {hazard_type}: {e}")
                 
-                # Create voting ensemble
+                # Create voting ensemble if we have multiple models
                 if len(ensemble_models) > 1:
-                    estimators = [(name, model) for name, model in ensemble_models.items()]
-                    ensemble = VotingClassifier(estimators=estimators, voting='soft')
-                    ensemble.fit(X_train_scaled, y_train)
-                    ensemble_models['ensemble'] = ensemble
+                    try:
+                        estimators = [(name, model) for name, model in ensemble_models.items()]
+                        ensemble = VotingClassifier(estimators=estimators, voting='soft')
+                        ensemble.fit(X_train_scaled, y_train)
+                        ensemble_models['ensemble'] = ensemble
+                        logger.info(f"Voting ensemble created for {hazard_type}")
+                    except Exception as e:
+                        logger.warning(f"Ensemble creation failed for {hazard_type}: {e}")
+                
+                # Ensure we have at least one working model
+                if not ensemble_models:
+                    logger.error(f"No models trained for {hazard_type}, creating emergency fallback")
+                    # Emergency fallback: simple Random Forest
+                    emergency_model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42)
+                    emergency_model.fit(X_train_scaled, y_train)
+                    ensemble_models['emergency_fallback'] = emergency_model
                 
                 # Evaluate models
                 model_performance = {}
@@ -514,6 +538,92 @@ class AdvancedDisasterPredictionService:
             except Exception as e:
                 logger.error(f"Advanced training failed for {hazard_type}: {e}")
                 results[hazard_type] = {'status': 'failed', 'error': str(e)}
+        
+        return results
+    
+    def train_simple_models(self) -> Dict[str, Any]:
+        """Train simple models using basic weather data patterns"""
+        results = {}
+        
+        for hazard_type in self.model_registry.keys():
+            try:
+                logger.info(f"Training simple models for {hazard_type}...")
+                
+                # Generate simple synthetic data
+                n_samples = 5000
+                np.random.seed(42)
+                
+                # Basic weather features only
+                data = {
+                    'temperature': np.random.normal(20, 10, n_samples),
+                    'humidity': np.random.uniform(30, 90, n_samples),
+                    'pressure': np.random.normal(1013, 20, n_samples),
+                    'wind_speed': np.random.exponential(5, n_samples),
+                    'wind_direction': np.random.uniform(0, 360, n_samples),
+                    'precipitation': np.random.exponential(2, n_samples),
+                    'visibility': np.random.uniform(5, 20, n_samples),
+                    'cloud_cover': np.random.uniform(0, 100, n_samples)
+                }
+                
+                # Simple disaster rules
+                disaster_occurred = np.zeros(n_samples, dtype=bool)
+                
+                if hazard_type == 'flood':
+                    disaster_occurred = (data['precipitation'] > 15) & (data['humidity'] > 70)
+                elif hazard_type == 'wildfire':
+                    disaster_occurred = (data['temperature'] > 30) & (data['humidity'] < 40) & (data['wind_speed'] > 10)
+                elif hazard_type == 'storm':
+                    disaster_occurred = (data['wind_speed'] > 20) & (data['pressure'] < 1000)
+                elif hazard_type == 'tornado':
+                    disaster_occurred = (data['wind_speed'] > 25) & (data['pressure'] < 990)
+                elif hazard_type == 'landslide':
+                    disaster_occurred = (data['precipitation'] > 20) & (data['wind_speed'] > 15)
+                elif hazard_type == 'drought':
+                    disaster_occurred = (data['precipitation'] < 1) & (data['temperature'] > 25)
+                
+                # Create DataFrame
+                df = pd.DataFrame(data)
+                df['disaster_occurred'] = disaster_occurred
+                
+                # Prepare features
+                feature_columns = ['temperature', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'precipitation', 'visibility', 'cloud_cover']
+                X = df[feature_columns].fillna(0)
+                y = df['disaster_occurred'].astype(int)
+                
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+                
+                # Scale features
+                scaler = StandardScaler()
+                X_train_scaled = scaler.fit_transform(X_train)
+                X_test_scaled = scaler.transform(X_test)
+                
+                # Train simple Random Forest
+                model = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
+                model.fit(X_train_scaled, y_train)
+                
+                # Save model and scaler
+                self.models[hazard_type] = {'random_forest': model}
+                self.scalers[hazard_type] = scaler
+                
+                # Evaluate
+                y_pred = model.predict(X_test_scaled)
+                accuracy = (y_pred == y_test).mean()
+                
+                results[hazard_type] = {
+                    'status': 'success',
+                    'accuracy': accuracy,
+                    'model_type': 'simple_random_forest'
+                }
+                
+                logger.info(f"Simple model trained for {hazard_type} with accuracy: {accuracy:.3f}")
+                
+            except Exception as e:
+                logger.error(f"Simple training failed for {hazard_type}: {e}")
+                results[hazard_type] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
         
         return results
     
@@ -783,12 +893,13 @@ class AdvancedDisasterPredictionService:
         """Generate advanced synthetic data with more realistic patterns"""
         np.random.seed(42)
         
-        # Base weather parameters
+        # Base weather parameters (always include these)
         data = {
             'temperature': np.random.normal(20, 10, n_samples),
             'humidity': np.random.uniform(30, 90, n_samples),
             'pressure': np.random.normal(1013, 20, n_samples),
             'wind_speed': np.random.exponential(5, n_samples),
+            'wind_direction': np.random.uniform(0, 360, n_samples),
             'precipitation': np.random.exponential(2, n_samples),
             'visibility': np.random.uniform(5, 20, n_samples),
             'cloud_cover': np.random.uniform(0, 100, n_samples)
@@ -812,14 +923,12 @@ class AdvancedDisasterPredictionService:
             })
         elif hazard_type == 'storm':
             data.update({
-                'wind_direction': np.random.uniform(0, 360, n_samples),
                 'atmospheric_stability': np.random.uniform(-5, 5, n_samples),
                 'convective_available_potential_energy': np.random.uniform(0, 3000, n_samples),
                 'wind_shear': np.random.uniform(0, 50, n_samples)
             })
         elif hazard_type == 'tornado':
             data.update({
-                'wind_direction': np.random.uniform(0, 360, n_samples),
                 'convective_available_potential_energy': np.random.uniform(0, 3000, n_samples),
                 'wind_shear': np.random.uniform(0, 50, n_samples),
                 'helicity': np.random.uniform(0, 500, n_samples)
@@ -843,44 +952,45 @@ class AdvancedDisasterPredictionService:
         df = pd.DataFrame(data)
         
         # Create disaster occurrence based on hazard-specific conditions
+        # Use numpy arrays for boolean operations to avoid pandas Series ambiguity
         disaster_occurred = np.zeros(n_samples, dtype=bool)
         
         if hazard_type == 'flood':
             disaster_occurred = (
-                (df['precipitation'] > 10) & 
-                (df['humidity'] > 70) & 
-                (df['soil_moisture'] > 0.7)
+                (df['precipitation'].values > 10) & 
+                (df['humidity'].values > 70) & 
+                (df['soil_moisture'].values > 0.7)
             )
         elif hazard_type == 'wildfire':
             disaster_occurred = (
-                (df['temperature'] > 30) & 
-                (df['humidity'] < 40) & 
-                (df['fuel_moisture'] < 15) &
-                (df['wind_speed'] > 10)
+                (df['temperature'].values > 30) & 
+                (df['humidity'].values < 40) & 
+                (df['fuel_moisture'].values < 15) &
+                (df['wind_speed'].values > 10)
             )
         elif hazard_type == 'storm':
             disaster_occurred = (
-                (df['wind_speed'] > 20) & 
-                (df['pressure'] < 1000) & 
-                (df['convective_available_potential_energy'] > 1000)
+                (df['wind_speed'].values > 20) & 
+                (df['pressure'].values < 1000) & 
+                (df['convective_available_potential_energy'].values > 1000)
             )
         elif hazard_type == 'tornado':
             disaster_occurred = (
-                (df['wind_speed'] > 25) & 
-                (df['wind_shear'] > 20) & 
-                (df['convective_available_potential_energy'] > 1500)
+                (df['wind_speed'].values > 25) & 
+                (df['wind_shear'].values > 20) & 
+                (df['convective_available_potential_energy'].values > 1500)
             )
         elif hazard_type == 'landslide':
             disaster_occurred = (
-                (df['precipitation'] > 15) & 
-                (df['slope'] > 20) & 
-                (df['soil_moisture'] > 0.8)
+                (df['precipitation'].values > 15) & 
+                (df['slope'].values > 20) & 
+                (df['soil_moisture'].values > 0.8)
             )
         elif hazard_type == 'drought':
             disaster_occurred = (
-                (df['precipitation'] < 2) & 
-                (df['temperature'] > 25) & 
-                (df['soil_moisture'] < 0.2)
+                (df['precipitation'].values < 2) & 
+                (df['temperature'].values > 25) & 
+                (df['soil_moisture'].values < 0.2)
             )
         
         df['disaster_occurred'] = disaster_occurred

@@ -35,10 +35,25 @@ try:
     # Check if models exist
     if not hasattr(ai_prediction_service, 'models') or not ai_prediction_service.models:
         print('No AI models found. Training models...')
-        ai_prediction_service.train_advanced_models(epochs=50)
-        print('AI models trained successfully!')
-    else:
-        print('AI models already exist and are loaded')
+        
+        # Try advanced training first
+        try:
+            print('Attempting advanced training...')
+            ai_prediction_service.train_advanced_models(epochs=50)
+            print('Advanced AI models trained successfully!')
+        except Exception as e:
+            print(f'Advanced training failed: {e}')
+            print('Falling back to simple training...')
+            
+            # Fallback to simple training
+            try:
+                ai_prediction_service.train_simple_models()
+                print('Simple AI models trained successfully as fallback!')
+            except Exception as fallback_error:
+                print(f'Even simple training failed: {fallback_error}')
+                print('Continuing with heuristic predictions only')
+        else:
+            print('AI models already exist and are loaded')
         
 except Exception as e:
     print(f'Error during AI model initialization: {e}')
