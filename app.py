@@ -70,6 +70,28 @@ def initialize_sample_data():
             "timestamp": "2024-08-24T06:15:00Z",
             "description": "Severe flooding along Mississippi River",
             "severity": "medium"
+        },
+        {
+            "id": "4",
+            "name": "Texas Tornado",
+            "type": "tornado",
+            "latitude": 31.9686,
+            "longitude": -99.9018,
+            "magnitude": 4.2,
+            "timestamp": "2024-08-24T14:20:00Z",
+            "description": "Tornado warning in Central Texas",
+            "severity": "high"
+        },
+        {
+            "id": "5",
+            "name": "California Earthquake",
+            "type": "earthquake",
+            "latitude": 36.7783,
+            "longitude": -119.4179,
+            "magnitude": 3.5,
+            "timestamp": "2024-08-24T16:45:00Z",
+            "description": "Minor earthquake in California",
+            "severity": "medium"
         }
     ]
     
@@ -94,11 +116,35 @@ def initialize_sample_data():
             "timestamp": "2024-08-24T12:00:00Z",
             "description": "Elevated wildfire risk in Los Angeles",
             "confidence": 0.88
+        },
+        {
+            "id": "p3",
+            "type": "storm",
+            "latitude": 25.7617,
+            "longitude": -80.1918,
+            "probability": 0.72,
+            "timestamp": "2024-08-24T12:00:00Z",
+            "description": "Tropical storm approaching Miami",
+            "confidence": 0.85
+        },
+        {
+            "id": "p4",
+            "type": "landslide",
+            "latitude": 47.6062,
+            "longitude": -122.3321,
+            "probability": 0.65,
+            "timestamp": "2024-08-24T12:00:00Z",
+            "description": "Landslide risk in Seattle area",
+            "confidence": 0.78
         }
     ]
 
 # Initialize sample data
 initialize_sample_data()
+
+# ============================================================================
+# HEALTH AND STATUS ENDPOINTS
+# ============================================================================
 
 @app.route('/health')
 def health_check():
@@ -116,7 +162,18 @@ def home():
     return jsonify({
         "message": "DisastroScope Backend API",
         "version": "1.0.0",
-        "status": "operational"
+        "status": "operational",
+        "endpoints": {
+            "health": "/health",
+            "api_health": "/api/health",
+            "events": "/api/events",
+            "predictions": "/api/predictions",
+            "models": "/api/models",
+            "ai_predict": "/api/ai/predict",
+            "weather": "/api/weather/<city>",
+            "events_near": "/api/events/near",
+            "predictions_near": "/api/predictions/near"
+        }
     })
 
 @app.route('/api/health')
@@ -127,6 +184,10 @@ def api_health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0"
     })
+
+# ============================================================================
+# DATA RETRIEVAL ENDPOINTS
+# ============================================================================
 
 @app.route('/api/events')
 def get_disaster_events():
@@ -159,19 +220,33 @@ def list_models():
     """List available AI models and their status"""
     try:
         hazards = {}
+        # Data source hints per hazard
         sources = {
             'flood': ['ERA5', 'GDACS'],
             'storm': ['ERA5'],
             'wildfire': ['FIRMS', 'ERA5'],
             'landslide': ['GDACS', 'ERA5'],
             'drought': ['ERA5'],
-            'earthquake': ['USGS']
+            'earthquake': ['USGS'],
+            'tornado': ['ERA5', 'NOAA']
         }
         
-        for hz in ['flood', 'storm', 'wildfire', 'landslide', 'drought', 'earthquake']:
+        # Define available models based on your backend capabilities
+        available_models = {
+            'flood': 'Rule-based Model',
+            'wildfire': 'Rule-based Model',
+            'storm': 'Rule-based Model',
+            'earthquake': 'Rule-based Model',
+            'tornado': 'Rule-based Model',
+            'landslide': 'Rule-based Model',
+            'drought': 'Rule-based Model'
+        }
+        
+        for hz, model in available_models.items():
+            loaded = True  # All models are loaded by default in this backend
             hazards[hz] = {
-                'loaded': True,
-                'type': 'heuristic',
+                'loaded': bool(loaded),
+                'type': 'heuristic',  # Rule-based models
                 'metrics': {},
                 'sources': sources.get(hz, [])
             }
@@ -186,6 +261,10 @@ def list_models():
     except Exception as e:
         logger.error(f"/api/models error: {e}")
         return jsonify({'error': 'failed to list models'}), 500
+
+# ============================================================================
+# AI PREDICTION ENDPOINTS
+# ============================================================================
 
 @app.route('/api/ai/predict', methods=['POST'])
 def predict_disaster_risks():
@@ -261,6 +340,10 @@ def predict_disaster_risks():
         logger.error(f"Error in AI prediction: {e}")
         return jsonify({'error': 'Failed to generate predictions'}), 500
 
+# ============================================================================
+# WEATHER ENDPOINTS
+# ============================================================================
+
 @app.route('/api/weather/<city>')
 def get_weather(city):
     """Get weather data for a city (mock data)"""
@@ -282,6 +365,10 @@ def get_weather(city):
     except Exception as e:
         logger.error(f"Error getting weather for {city}: {e}")
         return jsonify({"error": "Failed to get weather data"}), 500
+
+# ============================================================================
+# LOCATION-BASED ENDPOINTS
+# ============================================================================
 
 @app.route('/api/events/near', methods=['POST'])
 def get_events_near():
@@ -351,44 +438,25 @@ def get_predictions_near():
         logger.error(f"Error getting predictions near location: {e}")
         return jsonify({"error": "Failed to get nearby predictions"}), 500
 
-@app.route('/api/models')
-def list_models():
-    """List available AI models and their status"""
-    try:
-        hazards = {}
-        # Data source hints per hazard
-        sources = {
-            'flood': ['ERA5', 'GDACS'],
-            'storm': ['ERA5'],
-            'wildfire': ['FIRMS', 'ERA5'],
-            'landslide': ['GDACS', 'ERA5'],
-            'drought': ['ERA5'],
-            'earthquake': ['USGS']
-        }
-        
-        # Define available models based on your backend capabilities
-        available_models = {
-            'flood': 'Rule-based Model',
-            'wildfire': 'Rule-based Model',
-            'storm': 'Rule-based Model',
-            'earthquake': 'Rule-based Model',
-            'tornado': 'Rule-based Model',
-            'landslide': 'Rule-based Model',
-            'drought': 'Rule-based Model'
-        }
-        
-        for hz, model in available_models.items():
-            loaded = True  # All models are loaded by default in this backend
-            hazards[hz] = {
-                'loaded': bool(loaded),
-                'type': 'heuristic',  # Rule-based models
-                'metrics': {},
-                'sources': sources.get(hz, [])
-            }
-        return jsonify({'models': hazards, 'timestamp': datetime.now(timezone.utc).isoformat()})
-    except Exception as e:
-        logger.error(f"/api/models error: {e}")
-        return jsonify({'error': 'failed to list models'}), 500
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({'error': 'Method not allowed'}), 405
+
+# ============================================================================
+# APPLICATION ENTRY POINT
+# ============================================================================
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

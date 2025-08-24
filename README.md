@@ -1,377 +1,235 @@
-# Advanced DisastroScope Backend
+# DisastroScope Backend API
 
-## 🚀 Enterprise-Grade Disaster Prediction System
+A robust Flask-based backend API for disaster monitoring and prediction, designed to work seamlessly with the DisastroScope frontend.
 
-This is an advanced, enterprise-level backend system for disaster prediction and monitoring, featuring state-of-the-art AI models, comprehensive monitoring, and robust infrastructure.
+## 🚀 Features
 
-## ✨ Advanced Features
-
-### 🤖 AI/ML Capabilities
-- **Deep Learning Models**: TensorFlow-based neural networks with LSTM and CNN architectures
-- **Ensemble Learning**: Combines Random Forest, XGBoost, LightGBM, and Neural Networks
-- **Hyperparameter Optimization**: Automated tuning using Optuna
-- **Advanced Feature Engineering**: Domain-specific features for each disaster type
-- **Model Performance Tracking**: Real-time accuracy, precision, recall, and AUC metrics
-- **Auto-training**: Continuous model improvement with new data
-
-### 📊 Monitoring & Observability
-- **Real-time System Metrics**: CPU, memory, disk, and network monitoring
-- **Application Performance**: Request rates, response times, error rates
-- **AI Model Monitoring**: Prediction latency, accuracy tracking, training status
-- **Health Checks**: Automated health monitoring for all system components
-- **Alert System**: Intelligent alerting for critical issues
-- **Structured Logging**: JSON-formatted logs with correlation IDs
-
-### 🔧 Advanced Infrastructure
-- **Scalable Architecture**: Designed for high availability and performance
-- **API Rate Limiting**: Intelligent request throttling
-- **CORS Management**: Secure cross-origin resource sharing
-- **Error Handling**: Comprehensive error management and recovery
-- **Background Processing**: Asynchronous task processing
-- **Data Validation**: Robust input validation and sanitization
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Load Balancer │    │   Monitoring    │
-│   (React/Vue)   │◄──►│   (Nginx)       │◄──►│   (Prometheus)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   AI Models     │    │   Flask App     │    │   External      │
-│   (TensorFlow)  │◄──►│   (Python)      │◄──►│   APIs          │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Database      │    │   Cache         │    │   File Storage  │
-│   (PostgreSQL)  │    │   (Redis)       │    │   (S3/Cloud)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+- **Real-time Disaster Data**: Sample disaster events and predictions
+- **AI Prediction Engine**: Heuristic-based risk assessment for multiple disaster types
+- **Weather Integration**: Mock weather data for cities
+- **Location-based Queries**: Find disasters and predictions near specific coordinates
+- **Model Management**: Track available AI models and their status
+- **Health Monitoring**: Comprehensive health check endpoints
+- **CORS Support**: Cross-origin resource sharing enabled
+- **Error Handling**: Robust error handling with proper HTTP status codes
 
 ## 🛠️ Technology Stack
 
-### Core Framework
-- **Flask 2.3.3**: Modern Python web framework
-- **Flask-CORS**: Cross-origin resource sharing
-- **Flask-SocketIO**: Real-time communication
-- **Gunicorn**: Production WSGI server
+- **Framework**: Flask 2.3.3
+- **WSGI Server**: Gunicorn 21.2.0
+- **CORS**: Flask-CORS 4.0.0
+- **Environment**: python-dotenv 1.0.0
+- **HTTP Client**: requests 2.31.0
+- **Async Support**: eventlet 0.33.3 (for future WebSocket support)
 
-### AI/ML Libraries
-- **TensorFlow 2.13.0**: Deep learning framework
-- **XGBoost 1.7.6**: Gradient boosting
-- **LightGBM 4.0.0**: Light gradient boosting
-- **Scikit-learn 1.3.0**: Machine learning utilities
-- **Optuna 3.3.0**: Hyperparameter optimization
-- **SHAP 0.42.1**: Model interpretability
+## 📋 API Endpoints
 
-### Data Processing
-- **NumPy 1.24.3**: Numerical computing
-- **Pandas 2.0.3**: Data manipulation
-- **SciPy 1.11.1**: Scientific computing
-- **Joblib 1.3.2**: Parallel processing
+### Health & Status
+- `GET /health` - Basic health check
+- `GET /api/health` - API health check
+- `GET /` - API information and endpoint list
 
-### Monitoring & Observability
-- **Structlog 23.1.0**: Structured logging
-- **Psutil**: System monitoring
-- **Prometheus Client**: Metrics collection
-- **Sentry SDK**: Error tracking
+### Data Retrieval
+- `GET /api/events` - Get all disaster events
+- `GET /api/predictions` - Get all predictions
+- `GET /api/models` - List available AI models
 
-### External Services
-- **Aiohttp 3.8.6**: Async HTTP client
-- **Requests 2.31.0**: HTTP library
-- **Websockets 11.0.3**: WebSocket support
-
-## 📋 Prerequisites
-
-- Python 3.9+
-- pip (Python package manager)
-- Git
-- Railway account (for deployment)
-
-## 🚀 Quick Start
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/Hiruja99k/disastroscope-backend.git
-cd disastroscope-backend
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Environment Configuration
-Create a `.env` file with the following variables:
-```env
-# Core Configuration
-ENVIRONMENT=production
-SECRET_KEY=your-secret-key-here
-PORT=5000
-
-# AI Model Configuration
-MODEL_VERSION=3.0.0
-ENSEMBLE_ENABLED=true
-DEEP_LEARNING_ENABLED=true
-HYPERPARAMETER_OPTIMIZATION=true
-FEATURE_ENGINEERING_ENABLED=true
-
-# Auto-training Configuration
-AI_AUTO_TRAIN_ON_STARTUP=true
-AI_STARTUP_TRAIN_EPOCHS=100
-
-# External API Keys
-OPENWEATHER_API_KEY=your-openweather-api-key
-EONET_API_KEY=your-eonet-api-key
-FEMA_API_KEY=your-fema-api-key
-
-# Monitoring Configuration
-SENTRY_DSN=your-sentry-dsn
-PROMETHEUS_ENABLED=true
-
-# CORS Configuration
-ALLOWED_ORIGINS=https://your-frontend-domain.com
-```
-
-### 4. Run the Application
-```bash
-python app.py
-```
-
-The server will start on `http://localhost:5000`
-
-## 📡 API Endpoints
-
-### Core Endpoints
-- `GET /` - Health check
-- `GET /health` - Detailed health status
-- `GET /metrics` - System metrics
-- `GET /alerts` - Active alerts
-
-### AI Model Endpoints
-- `GET /api/models` - List all AI models and their status
+### AI & Predictions
 - `POST /api/ai/predict` - Generate disaster risk predictions
-- `POST /api/ai/train` - Train advanced AI models
-- `GET /api/ai/performance` - Get model performance metrics
 
-### Data Endpoints
-- `GET /api/weather` - Get weather data
-- `GET /api/weather/current` - Get current weather for location
-- `GET /api/events` - Get disaster events
-- `POST /api/events` - Create new disaster event
+### Weather
+- `GET /api/weather/<city>` - Get weather data for a city
 
-### External Service Endpoints
-- `GET /api/fema/disasters` - FEMA disaster declarations
-- `GET /api/eonet/events` - NASA EONET events
-- `GET /api/gdacs/events` - GDACS events
+### Location-based
+- `POST /api/events/near` - Find events near coordinates
+- `POST /api/predictions/near` - Find predictions near coordinates
 
-## 🤖 AI Model Details
+## 🏃‍♂️ Quick Start
 
-### Supported Disaster Types
-1. **Flood**: Advanced hydrological modeling with soil moisture and drainage analysis
-2. **Wildfire**: Fire danger index with fuel moisture and vegetation analysis
-3. **Storm**: Atmospheric stability and convective potential energy modeling
-4. **Tornado**: Wind shear and helicity analysis with supercell detection
-5. **Landslide**: Slope stability with geological and precipitation analysis
-6. **Drought**: Long-term precipitation and vegetation stress analysis
-7. **Earthquake**: Seismic hazard assessment (limited predictions)
+### Local Development
 
-### Model Architecture
-Each disaster type uses an ensemble of:
-- **Random Forest**: Robust baseline model
-- **XGBoost**: High-performance gradient boosting
-- **LightGBM**: Fast gradient boosting
-- **Deep Neural Network**: Complex pattern recognition
-- **LSTM/CNN**: Time series and spatial analysis
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd temp-backend
+   ```
 
-### Feature Engineering
-- **Advanced Weather Features**: Heat index, wind power, precipitation intensity
-- **Hazard-Specific Features**: Fire danger index, slope stability, seismic hazard
-- **Temporal Features**: Rolling averages, accumulation rates, trend analysis
-- **Spatial Features**: Elevation, slope, geological structure
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## 📊 Monitoring & Alerts
+3. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
 
-### System Metrics
-- CPU usage, memory usage, disk usage
-- Network I/O, uptime, response times
-- Request rates, error rates, active connections
+4. **Run the development server**
+   ```bash
+   python app.py
+   ```
 
-### AI Model Metrics
-- Prediction accuracy, precision, recall, F1-score
-- Model training status, prediction latency
-- Feature importance rankings
+5. **Test the API**
+   ```bash
+   python test_backend.py
+   ```
 
-### Alert Conditions
-- **Critical**: Memory > 90%, Disk > 90%, Error rate > 10%
-- **Warning**: Memory > 80%, Disk > 80%, Error rate > 5%
-- **Info**: No AI predictions, high latency, training failures
+### Production Deployment (Railway)
+
+1. **Deploy to Railway**
+   - Connect your GitHub repository to Railway
+   - Railway will automatically detect the Python app
+   - The `Procfile` and `start.sh` will handle the deployment
+
+2. **Environment Variables**
+   - Set `PORT` (Railway provides this automatically)
+   - Set `SECRET_KEY` for Flask security
+   - Set `RAILWAY_ENVIRONMENT=production`
 
 ## 🔧 Configuration
 
 ### Environment Variables
-All configuration is done through environment variables for security and flexibility:
 
-```env
-# Performance Tuning
-WORKER_PROCESSES=4
-WORKER_THREADS=2
-MAX_REQUESTS=1000
-MAX_REQUESTS_JITTER=50
-
-# AI Model Tuning
-ENSEMBLE_WEIGHT=0.8
-TRAINING_BATCH_SIZE=32
-PREDICTION_TIMEOUT=30
-
-# Monitoring Tuning
-METRICS_INTERVAL=30
-ALERT_THRESHOLD=0.1
-LOG_LEVEL=INFO
-```
-
-### Model Configuration
-Each disaster type can be configured independently:
-
-```python
-model_config = {
-    'flood': {
-        'ensemble_weight': 0.8,
-        'update_frequency': 'hourly',
-        'data_sources': ['ERA5', 'GDACS', 'USGS_Hydro']
-    },
-    'wildfire': {
-        'ensemble_weight': 0.85,
-        'update_frequency': 'hourly',
-        'data_sources': ['FIRMS', 'ERA5', 'MODIS']
-    }
-}
-```
-
-## 🚀 Deployment
-
-### Railway Deployment
-1. Connect your GitHub repository to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy automatically on push to main branch
-
-### Docker Deployment
 ```bash
-# Build image
-docker build -t disastroscope-backend .
+# Required
+PORT=5000                    # Port for the application
+SECRET_KEY=your-secret-key   # Flask secret key
 
-# Run container
-docker run -p 5000:5000 --env-file .env disastroscope-backend
+# Optional
+RAILWAY_ENVIRONMENT=production  # Set to 'production' for Railway
+DEBUG=False                     # Set to True for development
 ```
 
-### Production Considerations
-- Use multiple worker processes
-- Enable HTTPS with SSL certificates
-- Set up proper logging and monitoring
-- Configure database connections
-- Set up backup and recovery procedures
+### Gunicorn Configuration
+
+The application uses a custom `gunicorn.conf.py` with:
+- **Worker Class**: `sync` (synchronous workers)
+- **Workers**: 1 (single worker for Railway)
+- **Timeout**: 120 seconds
+- **Max Requests**: 1000 per worker
+
+## 📊 Sample Data
+
+The backend includes sample disaster events and predictions:
+
+### Disaster Events
+- Hurricane Maria (Puerto Rico)
+- California Wildfire
+- Mississippi Flood
+- Texas Tornado
+- California Earthquake
+
+### Predictions
+- Flood risk in Houston
+- Wildfire risk in Los Angeles
+- Storm risk in Miami
+- Landslide risk in Seattle
 
 ## 🧪 Testing
 
-### Unit Tests
+Run the comprehensive test suite:
+
 ```bash
-pytest tests/unit/
+python test_backend.py
 ```
 
-### Integration Tests
+This will test all endpoints and verify the API is working correctly.
+
+## 🔍 API Examples
+
+### Get All Events
 ```bash
-pytest tests/integration/
+curl http://localhost:5000/api/events
 ```
 
-### Performance Tests
+### Get AI Predictions
 ```bash
-pytest tests/performance/
+curl -X POST http://localhost:5000/api/ai/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "latitude": 40.7128,
+    "longitude": -74.0060,
+    "temperature": 25.0,
+    "humidity": 70.0,
+    "pressure": 1013.0,
+    "wind_speed": 10.0,
+    "precipitation": 5.0
+  }'
 ```
 
-### Load Testing
+### Find Events Near Location
 ```bash
-# Using Apache Bench
-ab -n 1000 -c 10 http://localhost:5000/api/models
+curl -X POST http://localhost:5000/api/events/near \
+  -H "Content-Type: application/json" \
+  -d '{
+    "latitude": 40.7128,
+    "longitude": -74.0060,
+    "radius": 100
+  }'
 ```
 
-## 📈 Performance Optimization
+## 🚨 Error Handling
 
-### Caching Strategy
-- Redis for session and model caching
-- In-memory caching for frequently accessed data
-- CDN for static assets
+The API includes comprehensive error handling:
 
-### Database Optimization
-- Connection pooling
-- Query optimization
-- Indexing strategy
-- Read replicas for scaling
+- **400 Bad Request**: Invalid input data
+- **404 Not Found**: Endpoint not found
+- **405 Method Not Allowed**: Wrong HTTP method
+- **500 Internal Server Error**: Server-side errors
 
-### AI Model Optimization
-- Model quantization
-- Batch prediction
-- GPU acceleration
-- Model serving optimization
+All errors return JSON responses with descriptive messages.
 
 ## 🔒 Security
 
-### Authentication & Authorization
-- API key authentication
-- Rate limiting
-- Input validation and sanitization
-- CORS configuration
+- CORS enabled for frontend integration
+- Input validation on all endpoints
+- Proper error handling without exposing internals
+- Environment-based configuration
 
-### Data Protection
-- Encryption at rest and in transit
-- Secure environment variable management
-- Regular security updates
-- Vulnerability scanning
+## 📈 Monitoring
 
-## 📚 Documentation
+- Health check endpoints for uptime monitoring
+- Structured logging with timestamps
+- Request/response logging via Gunicorn
 
-### API Documentation
-- Swagger/OpenAPI specification
-- Interactive API explorer
-- Code examples in multiple languages
+## 🚀 Deployment
 
-### Developer Documentation
-- Architecture diagrams
-- Code style guide
-- Contributing guidelines
-- Troubleshooting guide
+### Railway (Recommended)
+
+1. Push to GitHub
+2. Connect repository to Railway
+3. Railway auto-deploys on push
+4. Environment variables are set in Railway dashboard
+
+### Other Platforms
+
+The application is compatible with:
+- Heroku
+- DigitalOcean App Platform
+- AWS Elastic Beanstalk
+- Google Cloud Run
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests
+4. Add tests if applicable
 5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
 
 ## 🆘 Support
 
-- **Documentation**: [Wiki](https://github.com/Hiruja99k/disastroscope-backend/wiki)
-- **Issues**: [GitHub Issues](https://github.com/Hiruja99k/disastroscope-backend/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Hiruja99k/disastroscope-backend/discussions)
-
-## 🏆 Acknowledgments
-
-- NASA EONET for disaster event data
-- NOAA for weather and climate data
-- FEMA for disaster declaration data
-- GDACS for global disaster alerts
-- OpenWeatherMap for weather API
-- TensorFlow and scikit-learn communities
+For issues and questions:
+1. Check the logs in Railway dashboard
+2. Run the test suite locally
+3. Verify environment variables
+4. Check endpoint documentation above
 
 ---
 
-**Version**: 3.0.0  
-**Last Updated**: December 2024  
-**Maintainer**: DisastroScope Team
+**DisastroScope Backend** - Empowering disaster monitoring and prediction through intelligent APIs.

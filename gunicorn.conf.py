@@ -1,4 +1,4 @@
-# Gunicorn configuration file
+# Gunicorn configuration file for DisastroScope Backend
 import os
 
 # Server socket
@@ -53,3 +53,6 @@ def post_fork(server, worker):
 
 def post_worker_init(worker):
     worker.log.info("Worker initialized (pid: %s)", worker.pid)
+
+def worker_exit(server, worker):
+    server.log.info("Worker exited (pid: %s)", worker.pid)
