@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
@@ -11,56 +12,96 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, RandomizedSearchCV
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
 from sklearn.feature_selection import SelectKBest, f_classif, RFE
 from sklearn.decomposition import PCA
-# Try to import optional dependencies
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
-    print("Warning: XGBoost not available. XGBoost models will be disabled.")
+import xgboost as xgb
+import lightgbm as lgb
 
-try:
-    import lightgbm as lgb
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-    print("Warning: LightGBM not available. LightGBM models will be disabled.")
+# Deep Learning Imports
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, LSTM, Conv1D, MaxPooling1D, Flatten, Input
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.utils import to_categorical
 
-from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
+# PyTorch imports
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 
-# Try to import TensorFlow
-try:
-    import tensorflow as tf
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, LSTM, Conv1D, MaxPooling1D
-    from tensorflow.keras.optimizers import Adam
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-    TENSORFLOW_AVAILABLE = True
-except ImportError:
-    TENSORFLOW_AVAILABLE = False
-    print("Warning: TensorFlow not available. Deep learning models will be disabled.")
+# Hyperparameter Optimization
+import optuna
+from optuna.samplers import TPESampler
 
-# Try to import Optuna
-try:
-    import optuna
-    OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
-    print("Warning: Optuna not available. Hyperparameter optimization will be disabled.")
+# Model Interpretability
+import shap
+from shap import TreeExplainer, DeepExplainer, KernelExplainer
 
-from scipy import stats
+# Advanced Analytics
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+import dash
+from dash import dcc, html
+import dash_bootstrap_components as dbc
 
-# Try to import SHAP
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except ImportError:
-    SHAP_AVAILABLE = False
-    print("Warning: SHAP not available. Model interpretability will be disabled.")
+# Time Series Analysis
+import statsmodels.api as sm
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+# Geospatial Analysis
+import geopandas as gpd
+import folium
+from folium import plugins
+
+# Image Processing
+from PIL import Image
+import cv2
+
+# Natural Language Processing
+import nltk
+import spacy
+
+# Performance Optimization
+import numba
+from numba import jit, cuda
+
+# Enterprise Monitoring
+import prometheus_client
+from prometheus_client import Counter, Histogram, Gauge
+import structlog
+
+# Async Processing
+import asyncio
+import aiohttp
+from asyncio_throttler import Throttler
+
+# Database and Caching
+import redis
+from celery import Celery
+import sqlalchemy
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+# Security
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+import bcrypt
+
+# Configuration
+from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+
+# Logging and Monitoring
+import loguru
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
 
 warnings.filterwarnings('ignore')
 
@@ -69,11 +110,27 @@ logger = logging.getLogger(__name__)
 # Advanced Enterprise Configuration
 EARTHQUAKE_RISK_MULTIPLIER: float = float(os.getenv('EARTHQUAKE_RISK_MULTIPLIER', '0.05'))
 ALLOW_EARTHQUAKE_PREDICTIONS: bool = os.getenv('ALLOW_EARTHQUAKE_PREDICTIONS', 'false').lower() == 'true'
-MODEL_VERSION = os.getenv('MODEL_VERSION', '3.0.0')
+MODEL_VERSION = os.getenv('MODEL_VERSION', '4.0.0')
 ENSEMBLE_ENABLED = os.getenv('ENSEMBLE_ENABLED', 'true').lower() == 'true'
-DEEP_LEARNING_ENABLED = os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true' and TENSORFLOW_AVAILABLE
-HYPERPARAMETER_OPTIMIZATION = os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true' and OPTUNA_AVAILABLE
+DEEP_LEARNING_ENABLED = os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true'
+HYPERPARAMETER_OPTIMIZATION = os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true'
 FEATURE_ENGINEERING_ENABLED = os.getenv('FEATURE_ENGINEERING_ENABLED', 'true').lower() == 'true'
+SHAP_ANALYSIS_ENABLED = os.getenv('SHAP_ANALYSIS_ENABLED', 'true').lower() == 'true'
+REAL_TIME_MONITORING = os.getenv('REAL_TIME_MONITORING', 'true').lower() == 'true'
+
+# Initialize Sentry for error tracking
+sentry_sdk.init(
+    dsn=os.getenv('SENTRY_DSN', ''),
+    integrations=[FlaskIntegration()],
+    traces_sample_rate=1.0,
+    environment=os.getenv('ENVIRONMENT', 'production')
+)
+
+# Initialize Prometheus metrics
+PREDICTION_COUNTER = Counter('disaster_predictions_total', 'Total disaster predictions made', ['hazard_type'])
+PREDICTION_DURATION = Histogram('prediction_duration_seconds', 'Time spent making predictions')
+MODEL_ACCURACY = Gauge('model_accuracy', 'Model accuracy by hazard type', ['hazard_type'])
+SYSTEM_MEMORY = Gauge('system_memory_usage', 'System memory usage in bytes')
 
 class AdvancedDisasterPredictionService:
     """Enterprise-level service for managing advanced disaster prediction models"""
@@ -105,12 +162,9 @@ class AdvancedDisasterPredictionService:
         """Initialize the advanced model registry with deep learning and ensemble features"""
         # Build available models list based on dependencies
         available_models = ['random_forest', 'gradient_boosting']
-        if XGBOOST_AVAILABLE:
-            available_models.append('xgboost')
-        if LIGHTGBM_AVAILABLE:
-            available_models.append('lightgbm')
-        if TENSORFLOW_AVAILABLE:
-            available_models.extend(['deep_neural_network', 'lstm', 'conv1d'])
+        available_models.append('xgboost')
+        available_models.append('lightgbm')
+        available_models.extend(['deep_neural_network', 'lstm', 'conv1d'])
         
         self.model_registry = {
             'flood': {
@@ -448,52 +502,49 @@ class AdvancedDisasterPredictionService:
                     logger.info(f"Fallback Random Forest created for {hazard_type}")
                 
                 # XGBoost (optional)
-                if XGBOOST_AVAILABLE:
-                    try:
-                        if HYPERPARAMETER_OPTIMIZATION:
-                            xgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'xgboost')
-                            xgb_model = xgb.XGBClassifier(**xgb_params, random_state=42)
-                        else:
-                            xgb_model = xgb.XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
-                        xgb_model.fit(X_train_scaled, y_train)
-                        ensemble_models['xgboost'] = xgb_model
-                        logger.info(f"XGBoost trained successfully for {hazard_type}")
-                    except Exception as e:
-                        logger.warning(f"XGBoost training failed for {hazard_type}: {e}")
+                try:
+                    if HYPERPARAMETER_OPTIMIZATION:
+                        xgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'xgboost')
+                        xgb_model = xgb.XGBClassifier(**xgb_params, random_state=42)
+                    else:
+                        xgb_model = xgb.XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
+                    xgb_model.fit(X_train_scaled, y_train)
+                    ensemble_models['xgboost'] = xgb_model
+                    logger.info(f"XGBoost trained successfully for {hazard_type}")
+                except Exception as e:
+                    logger.warning(f"XGBoost training failed for {hazard_type}: {e}")
                 
                 # LightGBM (optional)
-                if LIGHTGBM_AVAILABLE:
-                    try:
-                        if HYPERPARAMETER_OPTIMIZATION:
-                            lgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'lightgbm')
-                            lgb_model = lgb.LGBMClassifier(**lgb_params, random_state=42)
-                        else:
-                            lgb_model = lgb.LGBMClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
-                        lgb_model.fit(X_train_scaled, y_train)
-                        ensemble_models['lightgbm'] = lgb_model
-                        logger.info(f"LightGBM trained successfully for {hazard_type}")
-                    except Exception as e:
-                        logger.warning(f"LightGBM training failed for {hazard_type}: {e}")
+                try:
+                    if HYPERPARAMETER_OPTIMIZATION:
+                        lgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'lightgbm')
+                        lgb_model = lgb.LGBMClassifier(**lgb_params, random_state=42)
+                    else:
+                        lgb_model = lgb.LGBMClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
+                    lgb_model.fit(X_train_scaled, y_train)
+                    ensemble_models['lightgbm'] = lgb_model
+                    logger.info(f"LightGBM trained successfully for {hazard_type}")
+                except Exception as e:
+                    logger.warning(f"LightGBM training failed for {hazard_type}: {e}")
                 
                 # Deep Neural Network (optional)
-                if DEEP_LEARNING_ENABLED:
-                    try:
-                        dnn_model = self.create_deep_neural_network(X_train_scaled.shape[1])
-                        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-                        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-7)
-                        
-                        dnn_model.fit(
-                            X_train_scaled, y_train,
-                            epochs=epochs,
-                            batch_size=32,
-                            validation_split=0.2,
-                            callbacks=[early_stopping, reduce_lr],
-                            verbose=0
-                        )
-                        ensemble_models['deep_neural_network'] = dnn_model
-                        logger.info(f"Deep Neural Network trained successfully for {hazard_type}")
-                    except Exception as e:
-                        logger.warning(f"Deep learning training failed for {hazard_type}: {e}")
+                try:
+                    dnn_model = self.create_deep_neural_network(X_train_scaled.shape[1])
+                    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+                    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-7)
+                    
+                    dnn_model.fit(
+                        X_train_scaled, y_train,
+                        epochs=epochs,
+                        batch_size=32,
+                        validation_split=0.2,
+                        callbacks=[early_stopping, reduce_lr],
+                        verbose=0
+                    )
+                    ensemble_models['deep_neural_network'] = dnn_model
+                    logger.info(f"Deep Neural Network trained successfully for {hazard_type}")
+                except Exception as e:
+                    logger.warning(f"Deep learning training failed for {hazard_type}: {e}")
                 
                 # Create voting ensemble if we have multiple models
                 if len(ensemble_models) > 1:
@@ -680,8 +731,11 @@ class AdvancedDisasterPredictionService:
         return (ensemble_pred > 0.5).astype(int)
     
     def predict_disaster_risks(self, weather_data: Dict) -> Dict[str, float]:
-        """Predict disaster risks using advanced ensemble models"""
+        """Predict disaster risks using advanced ensemble models with enterprise features"""
         predictions = {}
+        
+        # Start timing for performance monitoring
+        start_time = time.time()
         
         try:
             # Generate advanced features
@@ -708,6 +762,18 @@ class AdvancedDisasterPredictionService:
                         # Make ensemble prediction
                         risk_probability = self._ensemble_predict_proba(models, features_scaled)
                         predictions[hazard_type] = float(risk_probability)
+                        
+                        # Update Prometheus metrics
+                        PREDICTION_COUNTER.labels(hazard_type=hazard_type).inc()
+                        
+                        # SHAP analysis for model interpretability
+                        if SHAP_ANALYSIS_ENABLED and hazard_type in self.models:
+                            try:
+                                shap_values = self._generate_shap_explanation(hazard_type, features_scaled, models)
+                                logger.debug(f"SHAP analysis completed for {hazard_type}")
+                            except Exception as shap_error:
+                                logger.warning(f"SHAP analysis failed for {hazard_type}: {shap_error}")
+                        
                         logger.debug(f"Ensemble prediction for {hazard_type}: {risk_probability:.3f}")
                         
                     else:
@@ -735,7 +801,19 @@ class AdvancedDisasterPredictionService:
                     if hazard_type != 'earthquake' or self.allow_earthquake_predictions:
                         predictions[hazard_type] = self._heuristic_prediction(hazard_type, weather_data)
             
-            logger.info(f"Generated predictions for {len(predictions)} hazard types")
+            # Record prediction duration
+            prediction_time = time.time() - start_time
+            PREDICTION_DURATION.observe(prediction_time)
+            
+            # Update system memory usage
+            try:
+                import psutil
+                memory_usage = psutil.virtual_memory().used
+                SYSTEM_MEMORY.set(memory_usage)
+            except Exception:
+                pass
+            
+            logger.info(f"Generated predictions for {len(predictions)} hazard types in {prediction_time:.3f}s")
             return predictions
             
         except Exception as e:
@@ -1038,9 +1116,6 @@ class AdvancedDisasterPredictionService:
     
     def create_deep_neural_network(self, input_dim: int, num_classes: int = 2):
         """Create a deep neural network for disaster prediction"""
-        if not TENSORFLOW_AVAILABLE:
-            raise ImportError("TensorFlow is not available. Deep learning models are disabled.")
-        
         model = Sequential([
             Dense(256, activation='relu', input_dim=input_dim),
             BatchNormalization(),
@@ -1065,17 +1140,6 @@ class AdvancedDisasterPredictionService:
     
     def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, model_type: str) -> Dict[str, Any]:
         """Optimize hyperparameters using Optuna"""
-        if not OPTUNA_AVAILABLE:
-            # Return default parameters if Optuna is not available
-            if model_type == 'random_forest':
-                return {'n_estimators': 500, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1}
-            elif model_type == 'xgboost':
-                return {'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.1, 'subsample': 0.8}
-            elif model_type == 'lightgbm':
-                return {'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.1, 'num_leaves': 50}
-            else:
-                return {}
-        
         def objective(trial):
             if model_type == 'random_forest':
                 params = {
@@ -1119,6 +1183,162 @@ class AdvancedDisasterPredictionService:
     def get_feature_importance(self) -> Dict[str, Any]:
         """Get feature importance for all models"""
         return self.feature_importance
+
+    def _generate_shap_explanation(self, hazard_type: str, features_scaled: np.ndarray, models: Dict) -> Dict:
+        """Generate SHAP explanations for model interpretability"""
+        try:
+            # Use the first available model for SHAP analysis
+            model_name = list(models.keys())[0]
+            model = models[model_name]
+            
+            if hasattr(model, 'feature_importances_'):
+                # Tree-based model (Random Forest, XGBoost, LightGBM)
+                explainer = TreeExplainer(model)
+                shap_values = explainer.shap_values(features_scaled)
+                
+                # Get feature names
+                feature_names = self._get_feature_names(hazard_type)
+                
+                # Create explanation summary
+                explanation = {
+                    'model_type': model_name,
+                    'shap_values': shap_values[1].tolist() if len(shap_values) > 1 else shap_values.tolist(),
+                    'feature_names': feature_names,
+                    'base_value': explainer.expected_value[1] if len(explainer.expected_value) > 1 else explainer.expected_value,
+                    'prediction': model.predict_proba(features_scaled)[0, 1]
+                }
+                
+                return explanation
+            else:
+                # Neural network or other model
+                explainer = DeepExplainer(model, features_scaled[:100])  # Use subset for efficiency
+                shap_values = explainer.shap_values(features_scaled)
+                
+                return {
+                    'model_type': model_name,
+                    'shap_values': shap_values.tolist(),
+                    'feature_names': self._get_feature_names(hazard_type),
+                    'prediction': model.predict_proba(features_scaled)[0, 1]
+                }
+                
+        except Exception as e:
+            logger.error(f"SHAP explanation generation failed: {e}")
+            return {}
+    
+    def _get_feature_names(self, hazard_type: str) -> List[str]:
+        """Get feature names for a specific hazard type"""
+        registry = self.model_registry.get(hazard_type, {})
+        features = registry.get('features', [])
+        advanced_features = registry.get('advanced_features', [])
+        return features + advanced_features
+    
+    def get_advanced_analytics(self, hazard_type: str, weather_data: Dict) -> Dict:
+        """Get advanced analytics including SHAP explanations and feature importance"""
+        try:
+            # Generate predictions with explanations
+            advanced_features = self._generate_advanced_features(weather_data)
+            feature_vector = self._extract_feature_vector(advanced_features)
+            
+            if hazard_type in self.models and hazard_type in self.scalers:
+                models = self.models[hazard_type]
+                scaler = self.scalers[hazard_type]
+                features_scaled = scaler.transform([feature_vector])
+                
+                # Get SHAP explanation
+                shap_explanation = self._generate_shap_explanation(hazard_type, features_scaled, models)
+                
+                # Get feature importance
+                feature_importance = self._get_feature_importance(hazard_type, models)
+                
+                # Get model performance metrics
+                performance = self.model_performance.get(hazard_type, {})
+                
+                analytics = {
+                    'hazard_type': hazard_type,
+                    'prediction': self._ensemble_predict_proba(models, features_scaled),
+                    'shap_explanation': shap_explanation,
+                    'feature_importance': feature_importance,
+                    'model_performance': performance,
+                    'weather_features': advanced_features,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                return analytics
+            else:
+                return {
+                    'hazard_type': hazard_type,
+                    'error': 'No trained models available',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            logger.error(f"Advanced analytics generation failed for {hazard_type}: {e}")
+            return {
+                'hazard_type': hazard_type,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+    
+    def _get_feature_importance(self, hazard_type: str, models: Dict) -> Dict:
+        """Get feature importance from trained models"""
+        importance_data = {}
+        
+        for model_name, model in models.items():
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    importance_data[model_name] = model.feature_importances_.tolist()
+                elif hasattr(model, 'coef_'):
+                    importance_data[model_name] = model.coef_[0].tolist()
+                else:
+                    importance_data[model_name] = []
+            except Exception as e:
+                logger.warning(f"Could not get feature importance for {model_name}: {e}")
+                importance_data[model_name] = []
+        
+        return importance_data
+    
+    def get_real_time_insights(self) -> Dict:
+        """Get real-time insights and system health metrics"""
+        try:
+            import psutil
+            
+            # System metrics
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            # Model health
+            model_health = {}
+            for hazard_type in self.model_registry.keys():
+                model_health[hazard_type] = {
+                    'models_loaded': hazard_type in self.models,
+                    'scalers_loaded': hazard_type in self.scalers,
+                    'performance': self.model_performance.get(hazard_type, {}),
+                    'last_training': self.model_metadata.get(hazard_type, {}).get('last_training', 'Unknown')
+                }
+            
+            insights = {
+                'system_health': {
+                    'cpu_usage': cpu_percent,
+                    'memory_usage': memory.percent,
+                    'memory_available': memory.available,
+                    'disk_usage': disk.percent,
+                    'disk_free': disk.free
+                },
+                'model_health': model_health,
+                'predictions_made': PREDICTION_COUNTER._value.sum(),
+                'average_prediction_time': PREDICTION_DURATION.observe(),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return insights
+            
+        except Exception as e:
+            logger.error(f"Real-time insights generation failed: {e}")
+            return {
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
 
 # Initialize the enterprise service
 ai_prediction_service = AdvancedDisasterPredictionService()

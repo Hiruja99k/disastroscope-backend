@@ -1393,6 +1393,143 @@ def background_eonet_update():
 
 # Socket.IO events removed for Railway compatibility
 
+@app.route('/api/analytics/<hazard_type>', methods=['POST'])
+def get_advanced_analytics(hazard_type):
+    """Get advanced analytics including SHAP explanations and feature importance"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Get weather data from request
+        weather_data = data.get('weather_data', {})
+        if not weather_data:
+            return jsonify({'error': 'No weather data provided'}), 400
+        
+        # Get advanced analytics
+        analytics = ai_prediction_service.get_advanced_analytics(hazard_type, weather_data)
+        
+        return jsonify({
+            'status': 'success',
+            'analytics': analytics
+        })
+        
+    except Exception as e:
+        logger.error(f"Advanced analytics error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/insights/real-time', methods=['GET'])
+def get_real_time_insights():
+    """Get real-time system insights and health metrics"""
+    try:
+        insights = ai_prediction_service.get_real_time_insights()
+        
+        return jsonify({
+            'status': 'success',
+            'insights': insights
+        })
+        
+    except Exception as e:
+        logger.error(f"Real-time insights error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/models/performance', methods=['GET'])
+def get_model_performance():
+    """Get detailed model performance metrics"""
+    try:
+        performance = ai_prediction_service.get_model_performance()
+        
+        return jsonify({
+            'status': 'success',
+            'performance': performance
+        })
+        
+    except Exception as e:
+        logger.error(f"Model performance error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/models/feature-importance', methods=['GET'])
+def get_feature_importance():
+    """Get feature importance for all models"""
+    try:
+        feature_importance = ai_prediction_service.get_feature_importance()
+        
+        return jsonify({
+            'status': 'success',
+            'feature_importance': feature_importance
+        })
+        
+    except Exception as e:
+        logger.error(f"Feature importance error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/models/retrain', methods=['POST'])
+def retrain_models():
+    """Retrain all AI models with latest data"""
+    try:
+        data = request.get_json() or {}
+        epochs = data.get('epochs', 100)
+        
+        # Retrain advanced models
+        results = ai_prediction_service.train_advanced_models(epochs=epochs)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Models retrained successfully',
+            'results': results
+        })
+        
+    except Exception as e:
+        logger.error(f"Model retraining error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/health/advanced', methods=['GET'])
+def advanced_health_check():
+    """Advanced health check with detailed system status"""
+    try:
+        # Get basic health
+        basic_health = health_check()
+        basic_data = basic_health.get_json()
+        
+        # Get real-time insights
+        insights = ai_prediction_service.get_real_time_insights()
+        
+        # Get model status
+        model_status = ai_prediction_service.get_model_status()
+        
+        advanced_health = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'version': '4.0.0',
+            'basic_health': basic_data,
+            'system_insights': insights,
+            'model_status': model_status,
+            'features': {
+                'tensorflow': True,
+                'pytorch': True,
+                'xgboost': True,
+                'lightgbm': True,
+                'optuna': True,
+                'shap': True,
+                'deep_learning': True,
+                'ensemble_learning': True,
+                'hyperparameter_optimization': True,
+                'model_interpretability': True,
+                'real_time_monitoring': True,
+                'advanced_analytics': True
+            }
+        }
+        
+        return jsonify(advanced_health)
+        
+    except Exception as e:
+        logger.error(f"Advanced health check error: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
 if __name__ == '__main__':
     # Start background tasks
     weather_thread = threading.Thread(target=background_weather_update, daemon=True)

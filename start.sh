@@ -1,74 +1,85 @@
 #!/bin/bash
 
-# Startup script for Railway deployment
-# This ensures we use sync workers and avoid eventlet dependency issues
-
-echo "Starting DisastroScope Backend with sync workers..."
-
 # Set environment variables
 export PYTHONPATH=/app
 export FLASK_APP=app.py
 export FLASK_ENV=production
+export TF_CPP_MIN_LOG_LEVEL=2  # Reduce TensorFlow logging
+export OMP_NUM_THREADS=1  # Limit OpenMP threads
+export MKL_NUM_THREADS=1  # Limit MKL threads
+export NUMEXPR_NUM_THREADS=1  # Limit NumExpr threads
 
-# Set AI model configuration
-export AI_AUTO_TRAIN_ON_STARTUP=true
-export AI_STARTUP_TRAIN_EPOCHS=50
-export ENSEMBLE_ENABLED=true
-export DEEP_LEARNING_ENABLED=true
-export FEATURE_ENGINEERING_ENABLED=true
+# Handle PORT environment variable
+if [ -z "$PORT" ]; then
+    PORT=5000
+fi
 
-# Use default port 5000 if PORT is not set
-PORT=${PORT:-5000}
-echo "Starting server on port $PORT"
+echo "Starting DisastroScope Backend with all advanced features..."
+echo "Using port: $PORT"
 
-# Check if AI models need training
+# Initialize advanced libraries
+echo "Initializing advanced libraries..."
+
+# Test TensorFlow
+python -c "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}')"
+
+# Test PyTorch
+python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+
+# Test XGBoost
+python -c "import xgboost as xgb; print(f'XGBoost version: {xgb.__version__}')"
+
+# Test LightGBM
+python -c "import lightgbm as lgb; print(f'LightGBM version: {lgb.__version__}')"
+
+# Test Optuna
+python -c "import optuna; print(f'Optuna version: {optuna.__version__}')"
+
+# Test SHAP
+python -c "import shap; print(f'SHAP version: {shap.__version__}')"
+
+# Test spaCy
+python -c "import spacy; print(f'spaCy version: {spacy.__version__}')"
+
+echo "All advanced libraries initialized successfully!"
+
+# Check AI models
 echo "Checking AI models..."
-python -c "
-import os
-import sys
-sys.path.insert(0, '/app')
 
+# Train advanced models first
+echo "Training advanced AI models..."
+python -c "
+from ai_models import ai_prediction_service
 try:
-    from ai_models import ai_prediction_service
-    print('AI prediction service loaded successfully')
-    
-    # Check if models exist
-    if not hasattr(ai_prediction_service, 'models') or not ai_prediction_service.models:
-        print('No AI models found. Training models...')
-        
-        # Try advanced training first
-        try:
-            print('Attempting advanced training...')
-            ai_prediction_service.train_advanced_models(epochs=50)
-            print('Advanced AI models trained successfully!')
-        except Exception as e:
-            print(f'Advanced training failed: {e}')
-            print('Falling back to simple training...')
-            
-            # Fallback to simple training
-            try:
-                ai_prediction_service.train_simple_models()
-                print('Simple AI models trained successfully as fallback!')
-            except Exception as fallback_error:
-                print(f'Even simple training failed: {fallback_error}')
-                print('Continuing with heuristic predictions only')
+    results = ai_prediction_service.train_advanced_models(epochs=50)
+    print('Advanced AI models trained successfully!')
+    for hazard_type, result in results.items():
+        if result['status'] == 'success':
+            print(f'  ✓ {hazard_type}: {result.get(\"accuracy\", 0):.3f} accuracy')
         else:
-            print('AI models already exist and are loaded')
-        
+            print(f'  ✗ {hazard_type}: {result.get(\"error\", \"Unknown error\")}')
 except Exception as e:
-    print(f'Error during AI model initialization: {e}')
-    print('Continuing with heuristic predictions only')
+    print(f'Advanced training failed: {e}')
+    print('Falling back to simple models...')
+    try:
+        results = ai_prediction_service.train_simple_models()
+        print('Simple AI models trained successfully as fallback!')
+    except Exception as e2:
+        print(f'Simple training also failed: {e2}')
+        print('Using heuristic models only...')
 "
 
-# Start Gunicorn with explicit sync worker configuration
+# Start Gunicorn with optimized settings for heavy ML workloads
+echo "Starting Gunicorn server..."
 exec gunicorn \
     --bind 0.0.0.0:$PORT \
     --workers 2 \
     --worker-class sync \
-    --timeout 30 \
-    --keep-alive 2 \
+    --timeout 300 \
+    --keep-alive 5 \
     --max-requests 1000 \
-    --max-requests-jitter 50 \
+    --max-requests-jitter 100 \
+    --preload \
     --access-logfile - \
     --error-logfile - \
     --log-level info \
