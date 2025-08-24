@@ -28,9 +28,6 @@ shap==0.42.1
 
 # Monitoring and observability
 prometheus-client==0.17.1
-opentelemetry-api==1.20.0
-opentelemetry-sdk==1.20.0
-opentelemetry-instrumentation-flask==0.41b0
 structlog==23.1.0
 
 # Async and performance
@@ -81,7 +78,6 @@ pydantic-settings==2.0.2
 
 # Time series analysis
 statsmodels==0.14.0
-prophet==1.1.4
 
 # Geospatial analysis
 geopandas==0.13.2
@@ -102,8 +98,6 @@ seaborn==0.12.2
 
 # Web scraping and data collection
 beautifulsoup4==4.12.2
-selenium==4.11.2
-scrapy==2.8.0
 
 # API integrations
 google-cloud-storage==2.9.0
@@ -149,4 +143,3 @@ tox==4.6.4
 
 # Production deployment
 supervisor==4.2.5
-nginx==1.24.0

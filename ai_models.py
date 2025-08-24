@@ -79,7 +79,7 @@ import structlog
 # Async Processing
 import asyncio
 import aiohttp
-from asyncio_throttler import Throttler
+from asyncio_throttle import Throttler
 
 # Database and Caching
 import redis

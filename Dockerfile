@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install essential system dependencies only
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -23,44 +23,14 @@ RUN apt-get update && apt-get install -y \
     libhdf5-dev \
     libhdf5-serial-dev \
     libhdf5-103 \
-    libqtgui4 \
-    libqtwebkit4 \
-    libqt4-test \
     python3-dev \
     python3-pip \
     python3-setuptools \
     python3-wheel \
     python3-cffi \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libglib2.0-dev \
-    libgirepository1.0-dev \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
-    libgstreamer-plugins-bad1.0-dev \
-    gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad \
-    gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
-    gstreamer1.0-tools \
-    gstreamer1.0-x \
-    gstreamer1.0-alsa \
-    gstreamer1.0-gl \
-    gstreamer1.0-gtk3 \
-    gstreamer1.0-qt5 \
-    gstreamer1.0-pulseaudio \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libv4l-dev \
-    libxvidcore-dev \
-    libx264-dev \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
-    libatlas-base-dev \
-    gfortran \
     wget \
     unzip \
     && rm -rf /var/lib/apt/lists/*
