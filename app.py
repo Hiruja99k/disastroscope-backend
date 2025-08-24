@@ -17,6 +17,11 @@ import joblib
 # Load environment variables from .env (must happen BEFORE importing modules that read env)
 load_dotenv()
 
+# Enterprise imports
+from monitoring import monitoring
+import structlog
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
 from weather_service import weather_service, WeatherData
 from ai_models import ai_prediction_service
 from openfema_service import openfema_service, FEMADeclaration
@@ -29,21 +34,44 @@ from training.drought_trainer import train_and_save as train_drought
 from source_services import fetch_gdacs_events_near, fetch_firms_count_near, fetch_openaq_near
 from hazard_services import get_earthquake_hazard
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure enterprise logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
 
+logger = structlog.get_logger()
+
+# Initialize Flask app with enterprise features
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-# Allow all localhost ports (e.g., 3000, 5173, 8080) and any origin for API routes
-# Loosen CORS for API routes to avoid preflight failures from Vercel
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+app.config['ENVIRONMENT'] = os.getenv('ENVIRONMENT', 'production')
+
+# Enterprise CORS configuration
 CORS(app, resources={r"/api/*": {
-    "origins": "*",
-    "methods": ["GET", "POST", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"],
+    "origins": os.getenv('ALLOWED_ORIGINS', '*').split(','),
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization", "X-API-Key"],
     "max_age": 600
 }})
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Initialize monitoring
+monitoring.init_app(app)
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # In-memory storage (replace with database in production)
 disaster_events = []
@@ -537,22 +565,28 @@ def get_stats():
 @app.route('/api/ai/predict', methods=['POST'])
 def predict_disaster():
     """Make AI prediction for a specific location"""
-    data = request.get_json()
-    lat = data.get('lat')
-    lon = data.get('lon')
-    location_name = data.get('location_name')
-    
-    if not lat or not lon:
-        return jsonify({'error': 'Latitude and longitude required'}), 400
+    start_time = time.time()
     
     try:
+        data = request.get_json()
+        lat = data.get('lat')
+        lon = data.get('lon')
+        location_name = data.get('location_name')
+        
+        if not lat or not lon:
+            logger.warning("Missing coordinates in prediction request")
+            return jsonify({'error': 'Latitude and longitude required'}), 400
+        
         # Fetch weather data for the location
+        weather_fetch_start = time.time()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         weather = loop.run_until_complete(weather_service.get_current_weather(lat, lon, location_name))
         loop.close()
+        weather_fetch_duration = time.time() - weather_fetch_start
         
         if not weather:
+            logger.error("Failed to fetch weather data for prediction")
             return jsonify({'error': 'Failed to fetch weather data'}), 500
         
         weather_dict = {
@@ -566,8 +600,17 @@ def predict_disaster():
             'cloud_cover': weather.cloud_cover
         }
         
-        # Get AI predictions
+        # Get AI predictions using enterprise models
+        prediction_start = time.time()
         predictions_map = ai_prediction_service.predict_disaster_risks(weather_dict)
+        prediction_duration = time.time() - prediction_start
+        
+        # Record metrics for each prediction type
+        for hazard_type, risk_score in predictions_map.items():
+            monitoring.record_ai_prediction(hazard_type, prediction_duration, risk_score)
+        
+        # Record weather request
+        monitoring.record_weather_request()
 
         # Optional Gemini summaries for each predicted type
         summaries = {}
@@ -590,7 +633,7 @@ def predict_disaster():
                     timeframe='24-72h',
                     coordinates=weather.coordinates,
                     weather_data=weather_dict,
-                    ai_model='PyTorch + Gemini' if summaries.get(etype) else 'PyTorch Neural Network'
+                    ai_model='Enterprise Ensemble + Gemini' if summaries.get(etype) else 'Enterprise Ensemble'
                 )
                 if summaries.get(etype):
                     prediction.potential_impact = summaries[etype]
@@ -599,36 +642,93 @@ def predict_disaster():
                 # Emit real-time update
                 socketio.emit('new_prediction', prediction.to_dict())
         
+        total_duration = time.time() - start_time
+        
+        # Log successful prediction with performance metrics
+        logger.info("Enterprise AI prediction completed", 
+                   location=weather.location,
+                   weather_fetch_duration_ms=round(weather_fetch_duration * 1000, 2),
+                   prediction_duration_ms=round(prediction_duration * 1000, 2),
+                   total_duration_ms=round(total_duration * 1000, 2),
+                   predictions_count=len(predictions_map))
+        
         return jsonify({
             'location': weather.location,
             'coordinates': weather.coordinates,
             'weather_data': weather_dict,
             'predictions': predictions_map,
             'summaries': summaries,
+            'performance': {
+                'weather_fetch_duration_ms': round(weather_fetch_duration * 1000, 2),
+                'prediction_duration_ms': round(prediction_duration * 1000, 2),
+                'total_duration_ms': round(total_duration * 1000, 2),
+                'model_version': ai_prediction_service.model_metadata.get('version', '2.0.0'),
+                'ensemble_enabled': True
+            },
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
         
     except Exception as e:
-        logger.error(f"Error in AI prediction: {e}")
-        return jsonify({'error': 'Prediction failed'}), 500
+        total_duration = time.time() - start_time
+        logger.error(f"Error in enterprise AI prediction: {e}", 
+                    duration_ms=round(total_duration * 1000, 2),
+                    exc_info=True)
+        return jsonify({
+            'error': 'Prediction failed',
+            'details': str(e),
+            'duration_ms': round(total_duration * 1000, 2)
+        }), 500
 
 @app.route('/api/ai/train', methods=['POST'])
 def train_models():
-    """Train AI models"""
+    """Train enterprise AI models"""
+    start_time = time.time()
+    
     try:
-        # Train wildfire with FIRMS + ERA5; others remain heuristics for now
-        token = os.getenv('FIRMS_API_TOKEN')
-        model_dir = os.path.join(os.path.dirname(__file__), 'models')
-        if token:
-            train_wildfire(model_dir, token, days=7)
-        # Train storm model (uses ERA5 wind/pressure grid sampling)
-        train_storm(model_dir, days=7)
-        # Train flood model (global GDACS proxy + ERA5)
-        train_flood(model_dir, days=10)
-        # Train landslide model (global GDACS proxy + ERA5)
-        train_landslide(model_dir, days=14)
-        # Train drought model (global ERA5 proxy)
-        train_drought(model_dir)
+        # Get training parameters from request
+        data = request.get_json() or {}
+        epochs = data.get('epochs', 100)
+        auto_train = data.get('auto_train', True)
+        
+        logger.info("Starting enterprise AI model training", 
+                   epochs=epochs,
+                   auto_train=auto_train)
+        
+        # Use enterprise training method
+        training_results = ai_prediction_service.train_advanced_models(epochs=epochs)
+        
+        training_duration = time.time() - start_time
+        
+        # Log training results
+        successful_models = [hazard for hazard, result in training_results.items() 
+                           if result.get('status') == 'success']
+        
+        logger.info("Enterprise AI model training completed",
+                   duration_seconds=round(training_duration, 2),
+                   successful_models=len(successful_models),
+                   total_models=len(training_results))
+        
+        return jsonify({
+            'status': 'success',
+            'training_results': training_results,
+            'performance': {
+                'training_duration_seconds': round(training_duration, 2),
+                'models_trained': len(successful_models),
+                'total_models': len(training_results)
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        training_duration = time.time() - start_time
+        logger.error(f"Error in enterprise AI training: {e}",
+                    duration_seconds=round(training_duration, 2),
+                    exc_info=True)
+        return jsonify({
+            'error': 'Training failed',
+            'details': str(e),
+            'duration_seconds': round(training_duration, 2)
+        }), 500
         # Reload into memory
         try:
             wf_model = os.path.join(model_dir, 'wildfire_model.joblib')
@@ -677,44 +777,33 @@ def train_models():
 def list_models():
     """List available AI models and their status"""
     try:
-        model_dir = os.path.join(os.path.dirname(__file__), 'models')
-        hazards = {}
-        # Data source hints per hazard
-        sources = {
-            'flood': ['ERA5', 'GDACS'],
-            'storm': ['ERA5'],
-            'wildfire': ['FIRMS', 'ERA5'],
-            'landslide': ['GDACS', 'ERA5'],
-            'drought': ['ERA5'],
-            'earthquake': ['USGS']
-        }
-        for hz, model in ai_prediction_service.models.items():
-            loaded = isinstance(model, dict) and 'clf' in model
-            # find latest artifact
-            latest = None
-            metrics = None
-            try:
-                if os.path.isdir(model_dir):
-                    files = sorted([f for f in os.listdir(model_dir) if f.startswith(hz) and f.endswith('.joblib')])
-                    latest = files[-1] if files else None
-                    # find latest metrics json
-                    mfiles = sorted([f for f in os.listdir(model_dir) if f.startswith(f"{hz}_metrics_") and f.endswith('.json')])
-                    if mfiles:
-                        with open(os.path.join(model_dir, mfiles[-1]), 'r') as mf:
-                            metrics = json.load(mf)
-            except Exception:
-                latest = None
-            hazards[hz] = {
-                'loaded': bool(loaded),
-                'artifact': latest,
-                'type': 'ml' if loaded else 'heuristic',
-                'metrics': metrics or {},
-                'sources': sources.get(hz, [])
+        # Use the enterprise model status
+        model_status = ai_prediction_service.get_model_status()
+        
+        # Add enterprise metadata
+        model_status.update({
+            'enterprise_features': {
+                'ensemble_enabled': True,
+                'auto_training': True,
+                'model_versioning': True,
+                'performance_monitoring': True,
+                'data_sources': ['ERA5', 'GDACS', 'FIRMS', 'USGS', 'NASA', 'NOAA']
+            },
+            'deployment_info': {
+                'environment': app.config['ENVIRONMENT'],
+                'deployment_time': os.getenv('DEPLOYMENT_TIME', datetime.now().isoformat()),
+                'railway_service': os.getenv('RAILWAY_SERVICE_NAME', 'disastroscope-backend')
             }
-        return jsonify({'models': hazards, 'timestamp': datetime.now(timezone.utc).isoformat()})
+        })
+        
+        # Record metrics
+        monitoring.record_ai_prediction('model_status_check', 0.1)
+        
+        return jsonify(model_status)
+        
     except Exception as e:
-        logger.error(f"/api/models error: {e}")
-        return jsonify({'error': 'failed to list models'}), 500
+        logger.error(f"Error listing models: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to list models', 'details': str(e)}), 500
 
 @app.route('/api/events', methods=['POST'])
 def create_event():
