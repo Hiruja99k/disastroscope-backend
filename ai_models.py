@@ -87,6 +87,64 @@ class DisasterPredictionService:
                 'drought': 0.1,
                 'earthquake': 0.05
             }
+    
+    def get_model_status(self) -> Dict[str, Any]:
+        """Get the status of all AI models"""
+        try:
+            hazards = {}
+            # Data source hints per hazard
+            sources = {
+                'flood': ['ERA5', 'GDACS'],
+                'storm': ['ERA5'],
+                'wildfire': ['FIRMS', 'ERA5'],
+                'landslide': ['GDACS', 'ERA5'],
+                'drought': ['ERA5'],
+                'earthquake': ['USGS']
+            }
+            
+            for hz, model in self.models.items():
+                loaded = isinstance(model, dict) and 'clf' in model
+                # find latest artifact
+                latest = None
+                metrics = None
+                try:
+                    if os.path.isdir(self.model_dir):
+                        files = sorted([f for f in os.listdir(self.model_dir) if f.startswith(hz) and f.endswith('.joblib')])
+                        latest = files[-1] if files else None
+                        # find latest metrics json
+                        mfiles = sorted([f for f in os.listdir(self.model_dir) if f.startswith(f"{hz}_metrics_") and f.endswith('.json')])
+                        if mfiles:
+                            with open(os.path.join(self.model_dir, mfiles[-1]), 'r') as mf:
+                                metrics = json.load(mf)
+                except Exception:
+                    latest = None
+                
+                hazards[hz] = {
+                    'loaded': bool(loaded),
+                    'artifact': latest,
+                    'type': 'ml' if loaded else 'heuristic',
+                    'metrics': metrics or {},
+                    'sources': sources.get(hz, [])
+                }
+            
+            return {
+                'models': hazards,
+                'timestamp': datetime.now().isoformat(),
+                'total_models': len(hazards),
+                'loaded_models': sum(1 for h in hazards.values() if h['loaded']),
+                'service_status': 'operational'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting model status: {e}")
+            return {
+                'models': {},
+                'timestamp': datetime.now().isoformat(),
+                'total_models': 0,
+                'loaded_models': 0,
+                'service_status': 'error',
+                'error': str(e)
+            }
 
 # Initialize the service
 ai_prediction_service = DisasterPredictionService()
