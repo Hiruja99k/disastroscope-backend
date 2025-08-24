@@ -386,12 +386,34 @@ class AdvancedDisasterPredictionService:
                 # Generate synthetic data with advanced features
                 synthetic_data = self._generate_advanced_synthetic_data(hazard_type, n_samples=10000)
                 
-                # Create advanced features
-                synthetic_data = self.create_advanced_features(synthetic_data, hazard_type)
+                # Skip advanced feature creation during training (it's designed for single predictions)
+                # synthetic_data = self.create_advanced_features(synthetic_data, hazard_type)
                 
                 # Prepare features and target
                 feature_columns = self.model_registry[hazard_type]['features'] + self.model_registry[hazard_type]['advanced_features']
                 available_features = [col for col in feature_columns if col in synthetic_data.columns]
+                
+                # Ensure we have the basic features
+                basic_features = ['temperature', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'precipitation', 'visibility', 'cloud_cover']
+                for feature in basic_features:
+                    if feature not in available_features and feature in synthetic_data.columns:
+                        available_features.append(feature)
+                
+                # Safety check: ensure we have at least some features
+                if len(available_features) < 3:
+                    logger.warning(f"Insufficient features for {hazard_type}, using basic features only")
+                    available_features = basic_features
+                
+                # Ensure all available features exist in the data
+                missing_features = [col for col in available_features if col not in synthetic_data.columns]
+                if missing_features:
+                    logger.warning(f"Missing features for {hazard_type}: {missing_features}")
+                    # Remove missing features from the list
+                    available_features = [col for col in available_features if col in synthetic_data.columns]
+                
+                if not available_features:
+                    logger.error(f"No valid features found for {hazard_type}, skipping training")
+                    continue
                 
                 X = synthetic_data[available_features].fillna(0)
                 y = synthetic_data['disaster_occurred'].astype(int)
@@ -905,7 +927,7 @@ class AdvancedDisasterPredictionService:
             'cloud_cover': np.random.uniform(0, 100, n_samples)
         }
         
-        # Hazard-specific parameters
+        # Add all required features from model registry to avoid missing feature errors
         if hazard_type == 'flood':
             data.update({
                 'soil_moisture': np.random.uniform(0.1, 0.9, n_samples),
@@ -939,7 +961,8 @@ class AdvancedDisasterPredictionService:
                 'elevation': np.random.uniform(0, 2000, n_samples),
                 'soil_type': np.random.randint(1, 6, n_samples),
                 'vegetation_cover': np.random.uniform(0, 100, n_samples),
-                'geological_structure': np.random.randint(1, 4, n_samples)
+                'geological_structure': np.random.randint(1, 4, n_samples),
+                'soil_moisture': np.random.uniform(0.1, 0.9, n_samples)  # Add this for landslide
             })
         elif hazard_type == 'drought':
             data.update({
@@ -947,6 +970,16 @@ class AdvancedDisasterPredictionService:
                 'vegetation_index': np.random.uniform(0.1, 0.6, n_samples),
                 'evapotranspiration': np.random.uniform(1, 8, n_samples),
                 'groundwater_level': np.random.uniform(-10, 0, n_samples)
+            })
+        elif hazard_type == 'earthquake':
+            # Earthquake uses different features
+            data.update({
+                'seismic_activity': np.random.exponential(0.1, n_samples),
+                'fault_lines': np.random.randint(0, 10, n_samples),
+                'historical_events': np.random.randint(0, 100, n_samples),
+                'stress_accumulation': np.random.uniform(0, 1, n_samples),
+                'ground_deformation': np.random.normal(0, 0.01, n_samples),
+                'gravity_anomalies': np.random.normal(0, 0.001, n_samples)
             })
         
         df = pd.DataFrame(data)
@@ -991,6 +1024,12 @@ class AdvancedDisasterPredictionService:
                 (df['precipitation'].values < 2) & 
                 (df['temperature'].values > 25) & 
                 (df['soil_moisture'].values < 0.2)
+            )
+        elif hazard_type == 'earthquake':
+            disaster_occurred = (
+                (df['seismic_activity'].values > 0.5) & 
+                (df['stress_accumulation'].values > 0.7) & 
+                (df['ground_deformation'].values > 0.005)
             )
         
         df['disaster_occurred'] = disaster_occurred
