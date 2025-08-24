@@ -341,6 +341,45 @@ def get_predictions_near():
         logger.error(f"Error getting predictions near location: {e}")
         return jsonify({"error": "Failed to get nearby predictions"}), 500
 
+@app.route('/api/models')
+def list_models():
+    """List available AI models and their status"""
+    try:
+        hazards = {}
+        # Data source hints per hazard
+        sources = {
+            'flood': ['ERA5', 'GDACS'],
+            'storm': ['ERA5'],
+            'wildfire': ['FIRMS', 'ERA5'],
+            'landslide': ['GDACS', 'ERA5'],
+            'drought': ['ERA5'],
+            'earthquake': ['USGS']
+        }
+        
+        # Define available models based on your backend capabilities
+        available_models = {
+            'flood': 'Rule-based Model',
+            'wildfire': 'Rule-based Model',
+            'storm': 'Rule-based Model',
+            'earthquake': 'Rule-based Model',
+            'tornado': 'Rule-based Model',
+            'landslide': 'Rule-based Model',
+            'drought': 'Rule-based Model'
+        }
+        
+        for hz, model in available_models.items():
+            loaded = True  # All models are loaded by default in this backend
+            hazards[hz] = {
+                'loaded': bool(loaded),
+                'type': 'heuristic',  # Rule-based models
+                'metrics': {},
+                'sources': sources.get(hz, [])
+            }
+        return jsonify({'models': hazards, 'timestamp': datetime.now(timezone.utc).isoformat()})
+    except Exception as e:
+        logger.error(f"/api/models error: {e}")
+        return jsonify({'error': 'failed to list models'}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
