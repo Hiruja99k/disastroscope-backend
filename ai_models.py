@@ -413,8 +413,8 @@ class AdvancedDisasterPredictionService:
                     rf_model = RandomForestClassifier(**rf_params, random_state=42)
                 else:
                     rf_model = RandomForestClassifier(n_estimators=500, max_depth=10, random_state=42)
-                rf_model.fit(X_train_scaled, y_train)
-                ensemble_models['random_forest'] = rf_model
+                    rf_model.fit(X_train_scaled, y_train)
+                    ensemble_models['random_forest'] = rf_model
                 
                 # XGBoost
                 if XGBOOST_AVAILABLE:

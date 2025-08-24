@@ -30,5 +30,8 @@ ENV FLASK_ENV=production
 # Expose port
 EXPOSE 5000
 
-# Run the application with Gunicorn using configuration file
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
+# Make startup script executable
+RUN chmod +x start.sh
+
+# Run the application using the startup script
+CMD ["./start.sh"]
