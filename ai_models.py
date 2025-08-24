@@ -14,18 +14,53 @@ from sklearn.model_selection import train_test_split, cross_val_score, GridSearc
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_recall_fscore_support
 from sklearn.feature_selection import SelectKBest, f_classif, RFE
 from sklearn.decomposition import PCA
-import xgboost as xgb
-import lightgbm as lgb
+# Try to import optional dependencies
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    print("Warning: XGBoost not available. XGBoost models will be disabled.")
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    print("Warning: LightGBM not available. LightGBM models will be disabled.")
+
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, LSTM, Conv1D, MaxPooling1D
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-import optuna
+
+# Try to import TensorFlow
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, LSTM, Conv1D, MaxPooling1D
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+    print("Warning: TensorFlow not available. Deep learning models will be disabled.")
+
+# Try to import Optuna
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("Warning: Optuna not available. Hyperparameter optimization will be disabled.")
+
 from scipy import stats
-import shap
+
+# Try to import SHAP
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    print("Warning: SHAP not available. Model interpretability will be disabled.")
 
 warnings.filterwarnings('ignore')
 
@@ -36,8 +71,8 @@ EARTHQUAKE_RISK_MULTIPLIER: float = float(os.getenv('EARTHQUAKE_RISK_MULTIPLIER'
 ALLOW_EARTHQUAKE_PREDICTIONS: bool = os.getenv('ALLOW_EARTHQUAKE_PREDICTIONS', 'false').lower() == 'true'
 MODEL_VERSION = os.getenv('MODEL_VERSION', '3.0.0')
 ENSEMBLE_ENABLED = os.getenv('ENSEMBLE_ENABLED', 'true').lower() == 'true'
-DEEP_LEARNING_ENABLED = os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true'
-HYPERPARAMETER_OPTIMIZATION = os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true'
+DEEP_LEARNING_ENABLED = os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true' and TENSORFLOW_AVAILABLE
+HYPERPARAMETER_OPTIMIZATION = os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true' and OPTUNA_AVAILABLE
 FEATURE_ENGINEERING_ENABLED = os.getenv('FEATURE_ENGINEERING_ENABLED', 'true').lower() == 'true'
 
 class AdvancedDisasterPredictionService:
@@ -68,10 +103,19 @@ class AdvancedDisasterPredictionService:
     
     def _initialize_advanced_model_registry(self):
         """Initialize the advanced model registry with deep learning and ensemble features"""
+        # Build available models list based on dependencies
+        available_models = ['random_forest', 'gradient_boosting']
+        if XGBOOST_AVAILABLE:
+            available_models.append('xgboost')
+        if LIGHTGBM_AVAILABLE:
+            available_models.append('lightgbm')
+        if TENSORFLOW_AVAILABLE:
+            available_models.extend(['deep_neural_network', 'lstm', 'conv1d'])
+        
         self.model_registry = {
             'flood': {
                 'type': 'deep_ensemble',
-                'models': ['random_forest', 'gradient_boosting', 'xgboost', 'lightgbm', 'deep_neural_network', 'lstm'],
+                'models': available_models,
                 'features': ['temperature', 'humidity', 'pressure', 'wind_speed', 'precipitation', 'visibility', 'cloud_cover', 
                            'soil_moisture', 'river_level', 'drainage_capacity', 'elevation', 'slope'],
                 'advanced_features': ['precipitation_intensity', 'flood_index', 'water_accumulation_rate', 'drainage_efficiency'],
@@ -81,7 +125,7 @@ class AdvancedDisasterPredictionService:
             },
             'wildfire': {
                 'type': 'deep_ensemble',
-                'models': ['random_forest', 'gradient_boosting', 'xgboost', 'lightgbm', 'deep_neural_network', 'conv1d'],
+                'models': available_models,
                 'features': ['temperature', 'humidity', 'wind_speed', 'precipitation', 'visibility', 'fuel_moisture',
                            'vegetation_index', 'drought_index', 'fire_weather_index'],
                 'advanced_features': ['fire_danger_index', 'ignition_probability', 'spread_rate', 'fuel_load'],
@@ -91,7 +135,7 @@ class AdvancedDisasterPredictionService:
             },
             'storm': {
                 'type': 'deep_ensemble',
-                'models': ['random_forest', 'gradient_boosting', 'xgboost', 'lightgbm', 'deep_neural_network', 'lstm'],
+                'models': available_models,
                 'features': ['temperature', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'cloud_cover',
                            'atmospheric_stability', 'convective_available_potential_energy', 'wind_shear'],
                 'advanced_features': ['storm_intensity', 'lightning_probability', 'hail_probability', 'tornado_probability'],
@@ -373,22 +417,30 @@ class AdvancedDisasterPredictionService:
                 ensemble_models['random_forest'] = rf_model
                 
                 # XGBoost
-                if HYPERPARAMETER_OPTIMIZATION:
-                    xgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'xgboost')
-                    xgb_model = xgb.XGBClassifier(**xgb_params, random_state=42)
-                else:
-                    xgb_model = xgb.XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
-                xgb_model.fit(X_train_scaled, y_train)
-                ensemble_models['xgboost'] = xgb_model
+                if XGBOOST_AVAILABLE:
+                    try:
+                        if HYPERPARAMETER_OPTIMIZATION:
+                            xgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'xgboost')
+                            xgb_model = xgb.XGBClassifier(**xgb_params, random_state=42)
+                        else:
+                            xgb_model = xgb.XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
+                        xgb_model.fit(X_train_scaled, y_train)
+                        ensemble_models['xgboost'] = xgb_model
+                    except Exception as e:
+                        logger.warning(f"XGBoost training failed for {hazard_type}: {e}")
                 
                 # LightGBM
-                if HYPERPARAMETER_OPTIMIZATION:
-                    lgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'lightgbm')
-                    lgb_model = lgb.LGBMClassifier(**lgb_params, random_state=42)
-                else:
-                    lgb_model = lgb.LGBMClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
-                lgb_model.fit(X_train_scaled, y_train)
-                ensemble_models['lightgbm'] = lgb_model
+                if LIGHTGBM_AVAILABLE:
+                    try:
+                        if HYPERPARAMETER_OPTIMIZATION:
+                            lgb_params = self.optimize_hyperparameters(X_train_scaled, y_train, 'lightgbm')
+                            lgb_model = lgb.LGBMClassifier(**lgb_params, random_state=42)
+                        else:
+                            lgb_model = lgb.LGBMClassifier(n_estimators=500, max_depth=6, learning_rate=0.1, random_state=42)
+                        lgb_model.fit(X_train_scaled, y_train)
+                        ensemble_models['lightgbm'] = lgb_model
+                    except Exception as e:
+                        logger.warning(f"LightGBM training failed for {hazard_type}: {e}")
                 
                 # Deep Neural Network
                 if DEEP_LEARNING_ENABLED:
@@ -800,8 +852,11 @@ class AdvancedDisasterPredictionService:
         
         return df
     
-    def create_deep_neural_network(self, input_dim: int, num_classes: int = 2) -> tf.keras.Model:
+    def create_deep_neural_network(self, input_dim: int, num_classes: int = 2):
         """Create a deep neural network for disaster prediction"""
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is not available. Deep learning models are disabled.")
+        
         model = Sequential([
             Dense(256, activation='relu', input_dim=input_dim),
             BatchNormalization(),
@@ -826,6 +881,17 @@ class AdvancedDisasterPredictionService:
     
     def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, model_type: str) -> Dict[str, Any]:
         """Optimize hyperparameters using Optuna"""
+        if not OPTUNA_AVAILABLE:
+            # Return default parameters if Optuna is not available
+            if model_type == 'random_forest':
+                return {'n_estimators': 500, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1}
+            elif model_type == 'xgboost':
+                return {'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.1, 'subsample': 0.8}
+            elif model_type == 'lightgbm':
+                return {'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.1, 'num_leaves': 50}
+            else:
+                return {}
+        
         def objective(trial):
             if model_type == 'random_forest':
                 params = {

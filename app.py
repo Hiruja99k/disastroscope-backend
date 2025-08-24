@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit
 import os
 from dotenv import load_dotenv
 import json
@@ -69,8 +68,6 @@ CORS(app, resources={r"/api/*": {
 
 # Initialize advanced monitoring
 init_monitoring(app)
-
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # In-memory storage (replace with database in production)
 disaster_events = []
@@ -638,8 +635,7 @@ def predict_disaster():
                     prediction.potential_impact = summaries[etype]
                 
                 predictions.append(prediction)
-                # Emit real-time update
-                socketio.emit('new_prediction', prediction.to_dict())
+                        # Real-time update (socketio removed for Railway compatibility)
         
         total_duration = time.time() - start_time
         
@@ -944,7 +940,7 @@ def create_event():
     )
     
     disaster_events.append(event)
-    socketio.emit('new_event', event.to_dict())
+    # Real-time update (socketio removed for Railway compatibility)
     
     return jsonify(event.to_dict()), 201
 
@@ -1093,7 +1089,7 @@ def get_disasters():
         if disasters:
             fema_disasters.clear()
             fema_disasters.extend(disasters)
-            socketio.emit('disasters_update', disasters)
+            # Real-time update (socketio removed for Railway compatibility)
         
         return jsonify(disasters)
     except Exception as e:
@@ -1126,7 +1122,7 @@ def get_eonet_events():
         if events:
             eonet_events.clear()
             eonet_events.extend(events)
-            socketio.emit('eonet_update', events)
+            # Real-time update (socketio removed for Railway compatibility)
         
         return jsonify(events)
     except Exception as e:
@@ -1200,7 +1196,7 @@ def background_weather_update():
             if weather_data:
                 weather_data_cache.clear()
                 weather_data_cache.extend([w.to_dict() for w in weather_data])
-                socketio.emit('weather_update', weather_data_cache)
+                # Real-time update (socketio removed for Railway compatibility)
                 
         except Exception as e:
             logger.error(f"Background weather update error: {e}")
@@ -1219,7 +1215,7 @@ def background_disaster_update():
             if disasters:
                 fema_disasters.clear()
                 fema_disasters.extend(disasters)
-                socketio.emit('disasters_update', disasters)
+                # Real-time update (socketio removed for Railway compatibility)
                 
         except Exception as e:
             logger.error(f"Background disaster update error: {e}")
@@ -1238,49 +1234,14 @@ def background_eonet_update():
             if events:
                 eonet_events.clear()
                 eonet_events.extend(events)
-                socketio.emit('eonet_update', events)
+                # Real-time update (socketio removed for Railway compatibility)
                 
         except Exception as e:
             logger.error(f"Background EONET update error: {e}")
         
         time.sleep(900)  # 15 minutes
 
-# Socket.IO events
-@socketio.on('connect')
-def handle_connect():
-    """Handle client connection"""
-    print(f"Client connected: {request.sid}")
-    emit('connected', {'data': 'Connected to DisastroScope API'})
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Handle client disconnection"""
-    print(f"Client disconnected: {request.sid}")
-
-@socketio.on('subscribe_events')
-def handle_subscribe_events():
-    """Handle events subscription"""
-    emit('events_update', [event.to_dict() for event in disaster_events])
-
-@socketio.on('subscribe_predictions')
-def handle_subscribe_predictions():
-    """Handle predictions subscription"""
-    emit('predictions_update', [pred.to_dict() for pred in predictions])
-
-@socketio.on('subscribe_weather')
-def handle_subscribe_weather():
-    """Handle weather subscription"""
-    emit('weather_update', weather_data_cache)
-
-@socketio.on('subscribe_disasters')
-def handle_subscribe_disasters():
-    """Handle disasters subscription"""
-    emit('disasters_update', fema_disasters)
-
-@socketio.on('subscribe_eonet')
-def handle_subscribe_eonet():
-    """Handle EONET subscription"""
-    emit('eonet_update', eonet_events)
+# Socket.IO events removed for Railway compatibility
 
 if __name__ == '__main__':
     # Start background tasks
@@ -1294,4 +1255,4 @@ if __name__ == '__main__':
     eonet_thread.start()
     
     # Run the app
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
