@@ -1,28 +1,30 @@
 # Gunicorn configuration file for DisastroScope Backend
+# Production-ready configuration with monitoring and optimization
+
 import os
+import multiprocessing
 
 # Server socket
 bind = f"0.0.0.0:{os.environ.get('PORT', '5000')}"
 backlog = 2048
 
-# Worker processes - EXPLICITLY use sync workers, NOT eventlet
-workers = 1
-worker_class = 'sync'
+# Worker processes - optimized for Railway
+workers = 1  # Single worker for Railway's resource constraints
+worker_class = 'sync'  # Explicitly use sync workers
 worker_connections = 1000
 timeout = 120
 keepalive = 2
 
-# Prevent any auto-detection of worker classes
-preload_app = False
-
-# Restart workers after this many requests, to help prevent memory leaks
+# Performance optimization
 max_requests = 1000
 max_requests_jitter = 50
+preload_app = False
 
-# Logging
+# Logging configuration
 accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 # Process naming
 proc_name = 'disastroscope-backend'
@@ -38,21 +40,53 @@ tmp_upload_dir = None
 keyfile = None
 certfile = None
 
-# Explicitly disable eventlet and other async workers
+# Security
+limit_request_line = 4094
+limit_request_fields = 100
+limit_request_field_size = 8190
+
+# Worker lifecycle hooks
 def when_ready(server):
-    server.log.info("Server is ready. Spawning workers")
+    """Called just after the server is started"""
+    server.log.info("🚀 DisastroScope Backend is ready and accepting connections")
 
 def worker_int(worker):
-    worker.log.info("worker received INT or QUIT signal")
+    """Called when a worker receives SIGINT or SIGQUIT"""
+    worker.log.info("Worker received INT or QUIT signal")
 
 def pre_fork(server, worker):
-    server.log.info("Worker spawned (pid: %s)", worker.pid)
+    """Called just before a worker is forked"""
+    server.log.info(f"Spawning worker (pid: {worker.pid})")
 
 def post_fork(server, worker):
-    server.log.info("Worker spawned (pid: %s)", worker.pid)
+    """Called just after a worker has been forked"""
+    server.log.info(f"Worker spawned (pid: {worker.pid})")
 
 def post_worker_init(worker):
-    worker.log.info("Worker initialized (pid: %s)", worker.pid)
+    """Called just after a worker has initialized the application"""
+    worker.log.info(f"Worker initialized (pid: {worker.pid})")
 
 def worker_exit(server, worker):
-    server.log.info("Worker exited (pid: %s)", worker.pid)
+    """Called when a worker exits"""
+    server.log.info(f"Worker exited (pid: {worker.pid})")
+
+def on_exit(server):
+    """Called just before the server exits"""
+    server.log.info("DisastroScope Backend shutting down")
+
+# Health check configuration
+def health_check(env, start_response):
+    """Custom health check for load balancers"""
+    status = '200 OK'
+    response_headers = [('Content-Type', 'application/json')]
+    start_response(status, response_headers)
+    return [b'{"status":"healthy"}']
+
+# Request processing hooks
+def pre_request(worker, req):
+    """Called before processing each request"""
+    worker.log.info(f"Processing request: {req.method} {req.path}")
+
+def post_request(worker, req, environ, resp):
+    """Called after processing each request"""
+    worker.log.info(f"Completed request: {req.method} {req.path} - Status: {resp.status}")
