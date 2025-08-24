@@ -673,6 +673,49 @@ def train_models():
         logger.error(f"Error training models: {e}")
         return jsonify({'error': 'Training failed'}), 500
 
+@app.route('/api/models')
+def list_models():
+    """List available AI models and their status"""
+    try:
+        model_dir = os.path.join(os.path.dirname(__file__), 'models')
+        hazards = {}
+        # Data source hints per hazard
+        sources = {
+            'flood': ['ERA5', 'GDACS'],
+            'storm': ['ERA5'],
+            'wildfire': ['FIRMS', 'ERA5'],
+            'landslide': ['GDACS', 'ERA5'],
+            'drought': ['ERA5'],
+            'earthquake': ['USGS']
+        }
+        for hz, model in ai_prediction_service.models.items():
+            loaded = isinstance(model, dict) and 'clf' in model
+            # find latest artifact
+            latest = None
+            metrics = None
+            try:
+                if os.path.isdir(model_dir):
+                    files = sorted([f for f in os.listdir(model_dir) if f.startswith(hz) and f.endswith('.joblib')])
+                    latest = files[-1] if files else None
+                    # find latest metrics json
+                    mfiles = sorted([f for f in os.listdir(model_dir) if f.startswith(f"{hz}_metrics_") and f.endswith('.json')])
+                    if mfiles:
+                        with open(os.path.join(model_dir, mfiles[-1]), 'r') as mf:
+                            metrics = json.load(mf)
+            except Exception:
+                latest = None
+            hazards[hz] = {
+                'loaded': bool(loaded),
+                'artifact': latest,
+                'type': 'ml' if loaded else 'heuristic',
+                'metrics': metrics or {},
+                'sources': sources.get(hz, [])
+            }
+        return jsonify({'models': hazards, 'timestamp': datetime.now(timezone.utc).isoformat()})
+    except Exception as e:
+        logger.error(f"/api/models error: {e}")
+        return jsonify({'error': 'failed to list models'}), 500
+
 @app.route('/api/events', methods=['POST'])
 def create_event():
     """Create a new disaster event"""
