@@ -229,8 +229,8 @@ def health_check():
     """Comprehensive health check endpoint"""
     try:
         health_status = {
-            'status': 'healthy',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
             'version': '3.0.0',
             'services': {}
         }
@@ -433,7 +433,7 @@ def analyze_location():
         
         logger.info(f"Generating AI predictions for {location_name}")
         try:
-            predictions = ai_prediction_service.predict_disaster_risks(weather_dict)
+        predictions = ai_prediction_service.predict_disaster_risks(weather_dict)
             logger.info(f"AI predictions generated successfully: {len(predictions)} hazard types")
         except Exception as e:
             logger.error(f"AI prediction failed: {e}")
@@ -451,7 +451,7 @@ def analyze_location():
         forecast = []
         try:
             logger.info(f"Fetching weather forecast for {lat}, {lon}")
-            forecast = loop.run_until_complete(weather_service.get_weather_forecast(lat, lon, 5, 'metric'))
+        forecast = loop.run_until_complete(weather_service.get_weather_forecast(lat, lon, 5, 'metric'))
             if forecast:
                 logger.info(f"Weather forecast fetched: {len(forecast)} periods")
             else:
