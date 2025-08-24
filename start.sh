@@ -11,6 +11,10 @@ export FLASK_APP=app.py
 export FLASK_ENV=production
 
 # Start Gunicorn with explicit sync worker configuration
+# Use default port 5000 if PORT is not set
+PORT=${PORT:-5000}
+echo "Starting server on port $PORT"
+
 exec gunicorn \
     --bind 0.0.0.0:$PORT \
     --workers 2 \
