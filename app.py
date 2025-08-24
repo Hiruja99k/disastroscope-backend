@@ -224,15 +224,88 @@ class SensorData:
         }
 
 # Health check endpoint
-@app.route('/api/health')
+@app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint for Railway deployment"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'service': 'DisastroScope Backend API',
-        'version': '1.0.0'
-    })
+    """Comprehensive health check endpoint"""
+    try:
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'version': '3.0.0',
+            'services': {}
+        }
+        
+        # Check AI models
+        try:
+            from ai_models import ai_prediction_service
+            model_status = ai_prediction_service.get_model_status()
+            health_status['services']['ai_models'] = {
+                'status': 'healthy',
+                'overall_health': model_status.get('overall_health', 'unknown'),
+                'models_loaded': sum(1 for info in model_status.get('models', {}).values() if info.get('models_loaded')),
+                'total_models': len(model_status.get('models', {}))
+            }
+        except Exception as e:
+            health_status['services']['ai_models'] = {
+                'status': 'degraded',
+                'error': str(e)
+            }
+            health_status['status'] = 'degraded'
+        
+        # Check weather service
+        try:
+            from weather_service import weather_service
+            health_status['services']['weather_service'] = {
+                'status': 'healthy',
+                'api_key_configured': bool(os.getenv('OPENWEATHER_API_KEY') and os.getenv('OPENWEATHER_API_KEY') != 'your-api-key-here')
+            }
+        except Exception as e:
+            health_status['services']['weather_service'] = {
+                'status': 'degraded',
+                'error': str(e)
+            }
+            health_status['status'] = 'degraded'
+        
+        # Check monitoring
+        try:
+            from advanced_monitoring import advanced_monitoring
+            health_status['services']['monitoring'] = {
+                'status': 'healthy',
+                'uptime_seconds': time.time() - advanced_monitoring.start_time
+            }
+        except Exception as e:
+            health_status['services']['monitoring'] = {
+                'status': 'degraded',
+                'error': str(e)
+            }
+            health_status['status'] = 'degraded'
+        
+        # Check system resources
+        try:
+            import psutil
+            health_status['system'] = {
+                'cpu_percent': psutil.cpu_percent(),
+                'memory_percent': psutil.virtual_memory().percent,
+                'disk_percent': psutil.disk_usage('/').percent
+            }
+        except Exception as e:
+            health_status['system'] = {
+                'error': str(e)
+            }
+        
+        # Determine overall status
+        if health_status['status'] == 'healthy':
+            return jsonify(health_status), 200
+        else:
+            return jsonify(health_status), 503
+            
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
 
 # Geocoding endpoint for worldwide location search
 @app.route('/api/geocode')
@@ -300,10 +373,12 @@ def analyze_location():
         asyncio.set_event_loop(loop)
         
         # Step 1: Geocode the location
+        logger.info(f"Geocoding location: {query}")
         results = loop.run_until_complete(weather_service.geocode(query, limit=5))
         if not results:
             loop.close()
-            return jsonify({'error': 'Location not found'}), 404
+            logger.error(f"Location not found: {query}")
+            return jsonify({'error': f'Location "{query}" not found. Please check the spelling or try a different location.'}), 404
 
         # Step 2: Get the best match
         qnorm = query.strip().lower()
@@ -327,11 +402,22 @@ def analyze_location():
         lon = best['lon']
         location_name = f"{best.get('name')}{', ' + best.get('state') if best.get('state') else ''}{' ' + best.get('country') if best.get('country') else ''}".strip()
         
+        logger.info(f"Selected location: {location_name} at {lat}, {lon}")
+        
         # Step 3: Get current weather
+        logger.info(f"Fetching weather data for {lat}, {lon}")
         weather = loop.run_until_complete(weather_service.get_current_weather(lat, lon, location_name, 'metric'))
         if not weather:
             loop.close()
-            return jsonify({'error': 'Could not compute prediction for your location - weather data unavailable'}), 502
+            logger.error(f"Weather data unavailable for {lat}, {lon}")
+            return jsonify({
+                'error': 'Weather data temporarily unavailable',
+                'details': 'Unable to fetch current weather conditions. Please try again in a few minutes.',
+                'location': location_name,
+                'coordinates': {'lat': lat, 'lng': lon}
+            }), 502
+        
+        logger.info(f"Weather data fetched successfully: {weather.temperature}°C, {weather.humidity}% humidity")
         
         # Step 4: Generate AI predictions
         weather_dict = {
@@ -345,10 +431,34 @@ def analyze_location():
             'cloud_cover': weather.cloud_cover
         }
         
-        predictions = ai_prediction_service.predict_disaster_risks(weather_dict)
+        logger.info(f"Generating AI predictions for {location_name}")
+        try:
+            predictions = ai_prediction_service.predict_disaster_risks(weather_dict)
+            logger.info(f"AI predictions generated successfully: {len(predictions)} hazard types")
+        except Exception as e:
+            logger.error(f"AI prediction failed: {e}")
+            # Fallback to basic heuristic predictions
+            predictions = {
+                'flood': min(1.0, (weather_dict.get('precipitation', 0) / 20.0) * 0.7 + (weather_dict.get('humidity', 50) / 100.0) * 0.3),
+                'wildfire': min(1.0, (weather_dict.get('temperature', 20) / 40.0) * 0.4 + (1 - weather_dict.get('humidity', 50) / 100.0) * 0.4 + (weather_dict.get('wind_speed', 5) / 25.0) * 0.2),
+                'storm': min(1.0, (1 - weather_dict.get('pressure', 1013) / 1050.0) * 0.6 + (weather_dict.get('wind_speed', 5) / 25.0) * 0.4),
+                'landslide': min(1.0, (weather_dict.get('precipitation', 0) / 25.0) * 0.7 + (1 - weather_dict.get('pressure', 1013) / 1050.0) * 0.3),
+                'drought': min(1.0, (1 - weather_dict.get('precipitation', 0) / 25.0) * 0.4 + (weather_dict.get('temperature', 20) / 40.0) * 0.3 + (1 - weather_dict.get('humidity', 50) / 100.0) * 0.3)
+            }
+            logger.info("Using fallback heuristic predictions")
         
-        # Step 5: Get weather forecast
-        forecast = loop.run_until_complete(weather_service.get_weather_forecast(lat, lon, 5, 'metric'))
+        # Step 5: Get weather forecast (optional, don't fail if it doesn't work)
+        forecast = []
+        try:
+            logger.info(f"Fetching weather forecast for {lat}, {lon}")
+            forecast = loop.run_until_complete(weather_service.get_weather_forecast(lat, lon, 5, 'metric'))
+            if forecast:
+                logger.info(f"Weather forecast fetched: {len(forecast)} periods")
+            else:
+                logger.warning("Weather forecast unavailable, using empty forecast")
+        except Exception as e:
+            logger.warning(f"Weather forecast failed: {e}, continuing without forecast")
+        
         loop.close()
         
         # Step 6: Compile comprehensive analysis
@@ -360,16 +470,22 @@ def analyze_location():
             },
             'current_weather': weather_dict,
             'disaster_risks': predictions,
-            'forecast': forecast[:8],  # First 24 hours (3-hour intervals)
+            'forecast': (forecast or [])[:8],  # First 24 hours (3-hour intervals)
             'analysis_timestamp': datetime.now(timezone.utc).isoformat(),
-            'risk_summary': _generate_risk_summary(predictions, weather_dict)
+            'risk_summary': _generate_risk_summary(predictions, weather_dict),
+            'prediction_method': 'ai_ensemble' if hasattr(ai_prediction_service, 'models') and any(ai_prediction_service.models.values()) else 'heuristic_fallback'
         }
         
+        logger.info(f"Location analysis completed successfully for {location_name}")
         return jsonify(analysis)
         
     except Exception as e:
-        logger.error(f"Error in location analysis: {e}")
-        return jsonify({'error': 'Could not compute prediction for your location'}), 500
+        logger.error(f"Critical error in location analysis: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Analysis temporarily unavailable',
+            'details': 'We encountered an unexpected error while analyzing your location. Please try again.',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
 
 def _generate_risk_summary(predictions: Dict[str, float], weather: Dict) -> str:
     """Generate a human-readable risk summary"""
@@ -1179,6 +1295,40 @@ def test_location():
         logger.error(f"Test location error: {e}")
         return jsonify({
             'query': query,
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
+
+@app.route('/api/test/prediction', methods=['POST'])
+def test_prediction():
+    """Test endpoint to verify AI predictions work"""
+    try:
+        # Sample weather data for testing
+        test_weather = {
+            'temperature': 25.0,
+            'humidity': 60.0,
+            'pressure': 1013.0,
+            'wind_speed': 10.0,
+            'wind_direction': 180.0,
+            'precipitation': 0.0,
+            'visibility': 10.0,
+            'cloud_cover': 30.0
+        }
+        
+        from ai_models import ai_prediction_service
+        predictions = ai_prediction_service.predict_disaster_risks(test_weather)
+        
+        return jsonify({
+            'status': 'success',
+            'test_weather': test_weather,
+            'predictions': predictions,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Test prediction failed: {e}")
+        return jsonify({
+            'status': 'error',
             'error': str(e),
             'timestamp': datetime.now(timezone.utc).isoformat()
         }), 500

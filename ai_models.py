@@ -551,39 +551,74 @@ class AdvancedDisasterPredictionService:
         """Predict disaster risks using advanced ensemble models"""
         predictions = {}
         
-        # Generate advanced features
-        advanced_features = self._generate_advanced_features(weather_data)
-        
-        # Convert to feature vector
-        feature_vector = self._extract_feature_vector(advanced_features)
-        
-        for hazard_type, registry in self.model_registry.items():
-            if hazard_type == 'earthquake' and not self.allow_earthquake_predictions:
-                predictions[hazard_type] = 0.0
-                continue
+        try:
+            # Generate advanced features
+            advanced_features = self._generate_advanced_features(weather_data)
             
-            try:
-                if hazard_type in self.models and hazard_type in self.scalers:
-                    # Use ensemble model
-                    models = self.models[hazard_type]
-                    scaler = self.scalers[hazard_type]
-                    
-                    # Scale features
-                    features_scaled = scaler.transform([feature_vector])
-                    
-                    # Make ensemble prediction
-                    risk_probability = self._ensemble_predict_proba(models, features_scaled)
-                    predictions[hazard_type] = float(risk_probability)
-                    
-                else:
-                    # Fallback to heuristic
-                    predictions[hazard_type] = self._heuristic_prediction(hazard_type, advanced_features)
-                    
-            except Exception as e:
-                logger.error(f"Prediction failed for {hazard_type}: {e}")
-                predictions[hazard_type] = 0.0
-        
-        return predictions
+            # Convert to feature vector
+            feature_vector = self._extract_feature_vector(advanced_features)
+            
+            for hazard_type, registry in self.model_registry.items():
+                if hazard_type == 'earthquake' and not self.allow_earthquake_predictions:
+                    predictions[hazard_type] = 0.0
+                    continue
+                
+                try:
+                    if (hazard_type in self.models and hazard_type in self.scalers and 
+                        self.models[hazard_type] and self.scalers[hazard_type]):
+                        # Use ensemble model
+                        models = self.models[hazard_type]
+                        scaler = self.scalers[hazard_type]
+                        
+                        # Scale features
+                        features_scaled = scaler.transform([feature_vector])
+                        
+                        # Make ensemble prediction
+                        risk_probability = self._ensemble_predict_proba(models, features_scaled)
+                        predictions[hazard_type] = float(risk_probability)
+                        logger.debug(f"Ensemble prediction for {hazard_type}: {risk_probability:.3f}")
+                        
+                    else:
+                        # Fallback to heuristic
+                        risk_probability = self._heuristic_prediction(hazard_type, advanced_features)
+                        predictions[hazard_type] = float(risk_probability)
+                        logger.debug(f"Heuristic prediction for {hazard_type}: {risk_probability:.3f}")
+                        
+                except Exception as e:
+                    logger.error(f"Prediction failed for {hazard_type}: {e}")
+                    # Emergency fallback to basic heuristic
+                    try:
+                        risk_probability = self._heuristic_prediction(hazard_type, weather_data)
+                        predictions[hazard_type] = float(risk_probability)
+                        logger.info(f"Emergency heuristic fallback for {hazard_type}: {risk_probability:.3f}")
+                    except Exception as fallback_error:
+                        logger.error(f"Even heuristic fallback failed for {hazard_type}: {fallback_error}")
+                        # Last resort: return a safe default
+                        predictions[hazard_type] = 0.1
+            
+            # Ensure we have predictions for all hazard types
+            if not predictions:
+                logger.warning("No predictions generated, using default heuristic values")
+                for hazard_type in self.model_registry.keys():
+                    if hazard_type != 'earthquake' or self.allow_earthquake_predictions:
+                        predictions[hazard_type] = self._heuristic_prediction(hazard_type, weather_data)
+            
+            logger.info(f"Generated predictions for {len(predictions)} hazard types")
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"Critical error in predict_disaster_risks: {e}")
+            # Emergency fallback - return basic heuristic predictions
+            emergency_predictions = {}
+            for hazard_type in self.model_registry.keys():
+                if hazard_type != 'earthquake' or self.allow_earthquake_predictions:
+                    try:
+                        emergency_predictions[hazard_type] = self._heuristic_prediction(hazard_type, weather_data)
+                    except Exception:
+                        emergency_predictions[hazard_type] = 0.1
+            
+            logger.info(f"Emergency fallback predictions generated: {len(emergency_predictions)} hazard types")
+            return emergency_predictions
     
     def _extract_feature_vector(self, features: Dict) -> List[float]:
         """Extract feature vector in the correct order"""
