@@ -100,6 +100,16 @@ def initialize_sample_data():
 # Initialize sample data
 initialize_sample_data()
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway deployment"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'service': 'DisastroScope Backend API',
+        'version': '1.0.0'
+    })
+
 @app.route('/')
 def home():
     """Home endpoint"""
@@ -382,4 +392,9 @@ def list_models():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # Only run with Flask dev server if not in production
+    if os.environ.get('RAILWAY_ENVIRONMENT') != 'production':
+        app.run(host='0.0.0.0', port=port, debug=False)
+    else:
+        # In production, just create the app instance for gunicorn
+        pass
