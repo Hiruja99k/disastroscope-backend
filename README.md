@@ -1,375 +1,347 @@
-# DisastroScope Enterprise Backend
+# Advanced DisastroScope Backend
 
-A high-performance, enterprise-grade disaster prediction and monitoring system built with advanced AI models, real-time monitoring, and comprehensive observability.
+## 🚀 Enterprise-Grade Disaster Prediction System
 
-## 🚀 Enterprise Features
+This is an advanced, enterprise-level backend system for disaster prediction and monitoring, featuring state-of-the-art AI models, comprehensive monitoring, and robust infrastructure.
 
-### 🤖 Advanced AI Models
-- **Ensemble Learning**: Combines Random Forest, Gradient Boosting, and Neural Networks
-- **Auto-Training**: Automatic model retraining with new data
-- **Model Versioning**: Track model performance and versions
-- **Multi-Hazard Support**: Flood, Wildfire, Storm, Tornado, Landslide, Drought, Earthquake
-- **Real-time Predictions**: Sub-second prediction times with performance monitoring
+## ✨ Advanced Features
+
+### 🤖 AI/ML Capabilities
+- **Deep Learning Models**: TensorFlow-based neural networks with LSTM and CNN architectures
+- **Ensemble Learning**: Combines Random Forest, XGBoost, LightGBM, and Neural Networks
+- **Hyperparameter Optimization**: Automated tuning using Optuna
+- **Advanced Feature Engineering**: Domain-specific features for each disaster type
+- **Model Performance Tracking**: Real-time accuracy, precision, recall, and AUC metrics
+- **Auto-training**: Continuous model improvement with new data
 
 ### 📊 Monitoring & Observability
-- **Prometheus Metrics**: Comprehensive system and application metrics
-- **OpenTelemetry Tracing**: Distributed tracing with Jaeger
-- **Health Checks**: Automated health monitoring and alerting
-- **Performance Monitoring**: Real-time performance tracking
-- **Structured Logging**: JSON-structured logs with correlation IDs
+- **Real-time System Metrics**: CPU, memory, disk, and network monitoring
+- **Application Performance**: Request rates, response times, error rates
+- **AI Model Monitoring**: Prediction latency, accuracy tracking, training status
+- **Health Checks**: Automated health monitoring for all system components
+- **Alert System**: Intelligent alerting for critical issues
+- **Structured Logging**: JSON-formatted logs with correlation IDs
 
-### 🔒 Security & Performance
-- **Rate Limiting**: Configurable API rate limiting
+### 🔧 Advanced Infrastructure
+- **Scalable Architecture**: Designed for high availability and performance
+- **API Rate Limiting**: Intelligent request throttling
 - **CORS Management**: Secure cross-origin resource sharing
-- **API Key Authentication**: Optional API key-based authentication
-- **Performance Tuning**: Optimized for high-throughput scenarios
-- **Caching**: Redis-based caching for improved performance
+- **Error Handling**: Comprehensive error management and recovery
+- **Background Processing**: Asynchronous task processing
+- **Data Validation**: Robust input validation and sanitization
 
-### 🌐 Data Sources
-- **Weather Data**: OpenWeatherMap API integration
-- **Disaster Events**: NASA EONET, GDACS, FIRMS
-- **Government Data**: OpenFEMA disaster declarations
-- **Real-time Updates**: WebSocket-based real-time data streaming
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   Load Balancer │    │   Monitoring    │
+│   (React/Vue)   │◄──►│   (Nginx)       │◄──►│   (Prometheus)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   AI Models     │    │   Flask App     │    │   External      │
+│   (TensorFlow)  │◄──►│   (Python)      │◄──►│   APIs          │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Database      │    │   Cache         │    │   File Storage  │
+│   (PostgreSQL)  │    │   (Redis)       │    │   (S3/Cloud)    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
 
 ## 🛠️ Technology Stack
 
-- **Framework**: Flask 2.3.3 with SocketIO
-- **AI/ML**: Scikit-learn, XGBoost, LightGBM, TensorFlow, PyTorch
-- **Monitoring**: Prometheus, OpenTelemetry, Jaeger
-- **Caching**: Redis
-- **Database**: PostgreSQL (with SQLite fallback)
-- **Deployment**: Railway, Docker-ready
-- **Logging**: Structlog with JSON formatting
+### Core Framework
+- **Flask 2.3.3**: Modern Python web framework
+- **Flask-CORS**: Cross-origin resource sharing
+- **Flask-SocketIO**: Real-time communication
+- **Gunicorn**: Production WSGI server
+
+### AI/ML Libraries
+- **TensorFlow 2.13.0**: Deep learning framework
+- **XGBoost 1.7.6**: Gradient boosting
+- **LightGBM 4.0.0**: Light gradient boosting
+- **Scikit-learn 1.3.0**: Machine learning utilities
+- **Optuna 3.3.0**: Hyperparameter optimization
+- **SHAP 0.42.1**: Model interpretability
+
+### Data Processing
+- **NumPy 1.24.3**: Numerical computing
+- **Pandas 2.0.3**: Data manipulation
+- **SciPy 1.11.1**: Scientific computing
+- **Joblib 1.3.2**: Parallel processing
+
+### Monitoring & Observability
+- **Structlog 23.1.0**: Structured logging
+- **Psutil**: System monitoring
+- **Prometheus Client**: Metrics collection
+- **Sentry SDK**: Error tracking
+
+### External Services
+- **Aiohttp 3.8.6**: Async HTTP client
+- **Requests 2.31.0**: HTTP library
+- **Websockets 11.0.3**: WebSocket support
 
 ## 📋 Prerequisites
 
 - Python 3.9+
-- Redis (optional, for caching)
-- PostgreSQL (optional, SQLite for development)
+- pip (Python package manager)
+- Git
 - Railway account (for deployment)
 
 ## 🚀 Quick Start
 
-### 1. Clone and Setup
-
+### 1. Clone the Repository
 ```bash
 git clone https://github.com/Hiruja99k/disastroscope-backend.git
 cd disastroscope-backend
 ```
 
-### 2. Environment Configuration
-
-Create a `.env` file with your configuration:
-
-```env
-# Core Configuration
-ENVIRONMENT=production
-SECRET_KEY=your-secure-secret-key-here
-DEBUG=false
-
-# API Keys
-WEATHER_API_KEY=your-openweathermap-api-key
-FIRMS_API_TOKEN=your-firms-api-token
-GEMINI_API_KEY=your-gemini-api-key
-OPENFEMA_API_KEY=your-openfema-api-key
-EONET_API_KEY=your-eonet-api-key
-
-# Database
-DATABASE_URL=postgresql://user:password@localhost/disastroscope
-DB_POOL_SIZE=10
-DB_MAX_OVERFLOW=20
-
-# Redis (optional)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your-redis-password
-
-# Monitoring
-PROMETHEUS_ENABLED=true
-OPENTELEMETRY_ENABLED=true
-JAEGER_HOST=localhost
-JAEGER_PORT=6831
-
-# AI Configuration
-ENSEMBLE_ENABLED=true
-AI_AUTO_TRAIN_ON_STARTUP=true
-MODEL_VERSION=2.0.0
-AI_STARTUP_TRAIN_EPOCHS=100
-
-# Security
-ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
-API_KEY_REQUIRED=false
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_WINDOW=3600
-
-# Performance
-WORKER_PROCESSES=4
-WORKER_THREADS=2
-MAX_CONNECTIONS=1000
-CACHE_TTL=300
-```
-
-### 3. Install Dependencies
-
+### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Initialize AI Models
+### 3. Environment Configuration
+Create a `.env` file with the following variables:
+```env
+# Core Configuration
+ENVIRONMENT=production
+SECRET_KEY=your-secret-key-here
+PORT=5000
 
-```bash
-python -c "from ai_models import ai_prediction_service; ai_prediction_service.train_advanced_models()"
+# AI Model Configuration
+MODEL_VERSION=3.0.0
+ENSEMBLE_ENABLED=true
+DEEP_LEARNING_ENABLED=true
+HYPERPARAMETER_OPTIMIZATION=true
+FEATURE_ENGINEERING_ENABLED=true
+
+# Auto-training Configuration
+AI_AUTO_TRAIN_ON_STARTUP=true
+AI_STARTUP_TRAIN_EPOCHS=100
+
+# External API Keys
+OPENWEATHER_API_KEY=your-openweather-api-key
+EONET_API_KEY=your-eonet-api-key
+FEMA_API_KEY=your-fema-api-key
+
+# Monitoring Configuration
+SENTRY_DSN=your-sentry-dsn
+PROMETHEUS_ENABLED=true
+
+# CORS Configuration
+ALLOWED_ORIGINS=https://your-frontend-domain.com
 ```
 
-### 5. Run the Application
-
-#### Development
+### 4. Run the Application
 ```bash
 python app.py
 ```
 
-#### Production with Gunicorn
-```bash
-gunicorn -w 4 -k eventlet -b 0.0.0.0:5000 app:app
-```
+The server will start on `http://localhost:5000`
 
 ## 📡 API Endpoints
 
 ### Core Endpoints
+- `GET /` - Health check
+- `GET /health` - Detailed health status
+- `GET /metrics` - System metrics
+- `GET /alerts` - Active alerts
 
-#### Health Check
-```http
-GET /health
-```
-Returns system health status and metrics.
+### AI Model Endpoints
+- `GET /api/models` - List all AI models and their status
+- `POST /api/ai/predict` - Generate disaster risk predictions
+- `POST /api/ai/train` - Train advanced AI models
+- `GET /api/ai/performance` - Get model performance metrics
 
-#### Metrics (Prometheus)
-```http
-GET /metrics
-```
-Returns Prometheus-formatted metrics.
+### Data Endpoints
+- `GET /api/weather` - Get weather data
+- `GET /api/weather/current` - Get current weather for location
+- `GET /api/events` - Get disaster events
+- `POST /api/events` - Create new disaster event
 
-#### AI Models Status
-```http
-GET /api/models
-```
-Returns comprehensive AI model status and performance metrics.
+### External Service Endpoints
+- `GET /api/fema/disasters` - FEMA disaster declarations
+- `GET /api/eonet/events` - NASA EONET events
+- `GET /api/gdacs/events` - GDACS events
 
-#### Disaster Predictions
-```http
-POST /api/ai/predict
-Content-Type: application/json
+## 🤖 AI Model Details
 
-{
-  "lat": 37.7749,
-  "lon": -122.4194,
-  "location_name": "San Francisco, CA"
-}
-```
+### Supported Disaster Types
+1. **Flood**: Advanced hydrological modeling with soil moisture and drainage analysis
+2. **Wildfire**: Fire danger index with fuel moisture and vegetation analysis
+3. **Storm**: Atmospheric stability and convective potential energy modeling
+4. **Tornado**: Wind shear and helicity analysis with supercell detection
+5. **Landslide**: Slope stability with geological and precipitation analysis
+6. **Drought**: Long-term precipitation and vegetation stress analysis
+7. **Earthquake**: Seismic hazard assessment (limited predictions)
 
-#### Train AI Models
-```http
-POST /api/ai/train
-Content-Type: application/json
+### Model Architecture
+Each disaster type uses an ensemble of:
+- **Random Forest**: Robust baseline model
+- **XGBoost**: High-performance gradient boosting
+- **LightGBM**: Fast gradient boosting
+- **Deep Neural Network**: Complex pattern recognition
+- **LSTM/CNN**: Time series and spatial analysis
 
-{
-  "epochs": 100,
-  "auto_train": true
-}
-```
+### Feature Engineering
+- **Advanced Weather Features**: Heat index, wind power, precipitation intensity
+- **Hazard-Specific Features**: Fire danger index, slope stability, seismic hazard
+- **Temporal Features**: Rolling averages, accumulation rates, trend analysis
+- **Spatial Features**: Elevation, slope, geological structure
 
-#### Weather Data
-```http
-GET /api/weather
-```
-Returns weather data for monitored locations.
+## 📊 Monitoring & Alerts
 
-#### Current Weather
-```http
-GET /api/weather/current?lat=37.7749&lon=-122.4194&name=San Francisco
-```
+### System Metrics
+- CPU usage, memory usage, disk usage
+- Network I/O, uptime, response times
+- Request rates, error rates, active connections
 
-### Real-time WebSocket Events
+### AI Model Metrics
+- Prediction accuracy, precision, recall, F1-score
+- Model training status, prediction latency
+- Feature importance rankings
 
-Connect to `/socket.io` for real-time updates:
-
-- `new_event`: New disaster event detected
-- `new_prediction`: New AI prediction generated
-- `weather_update`: Weather data updates
-- `system_alert`: System alerts and notifications
+### Alert Conditions
+- **Critical**: Memory > 90%, Disk > 90%, Error rate > 10%
+- **Warning**: Memory > 80%, Disk > 80%, Error rate > 5%
+- **Info**: No AI predictions, high latency, training failures
 
 ## 🔧 Configuration
 
 ### Environment Variables
+All configuration is done through environment variables for security and flexibility:
 
-The system uses a comprehensive configuration system. See `config.py` for all available options.
+```env
+# Performance Tuning
+WORKER_PROCESSES=4
+WORKER_THREADS=2
+MAX_REQUESTS=1000
+MAX_REQUESTS_JITTER=50
 
-### AI Model Configuration
+# AI Model Tuning
+ENSEMBLE_WEIGHT=0.8
+TRAINING_BATCH_SIZE=32
+PREDICTION_TIMEOUT=30
 
-```python
-# Enable/disable ensemble learning
-ENSEMBLE_ENABLED=true
-
-# Auto-training configuration
-AI_AUTO_TRAIN_ON_STARTUP=true
-AI_STARTUP_TRAIN_EPOCHS=100
-
-# Model versioning
-MODEL_VERSION=2.0.0
-
-# Prediction thresholds
-PREDICTION_THRESHOLD=0.1
-MAX_PREDICTION_TIME=5.0
-```
-
-### Monitoring Configuration
-
-```python
-# Prometheus metrics
-PROMETHEUS_ENABLED=true
-
-# OpenTelemetry tracing
-OPENTELEMETRY_ENABLED=true
-JAEGER_HOST=localhost
-JAEGER_PORT=6831
-
-# Metrics collection interval
+# Monitoring Tuning
 METRICS_INTERVAL=30
-HEALTH_CHECK_INTERVAL=60
+ALERT_THRESHOLD=0.1
+LOG_LEVEL=INFO
 ```
 
-## 📊 Monitoring & Observability
+### Model Configuration
+Each disaster type can be configured independently:
 
-### Prometheus Metrics
-
-The application exposes comprehensive metrics at `/metrics`:
-
-- **Request Metrics**: Total requests, duration, status codes
-- **AI Metrics**: Prediction counts, durations, accuracy
-- **System Metrics**: CPU, memory, disk usage
-- **Business Metrics**: Weather requests, disaster events
-
-### Health Checks
-
-Access `/health` for system health status:
-
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "version": "2.0.0",
-  "checks": {
-    "system": {
-      "cpu_usage": 45.2,
-      "memory_usage": 67.8,
-      "disk_usage": 23.1,
-      "status": "healthy"
+```python
+model_config = {
+    'flood': {
+        'ensemble_weight': 0.8,
+        'update_frequency': 'hourly',
+        'data_sources': ['ERA5', 'GDACS', 'USGS_Hydro']
     },
-    "application": {
-      "requests_per_second": 12.5,
-      "error_rate": 0.02,
-      "average_response_time": 0.8,
-      "status": "healthy"
+    'wildfire': {
+        'ensemble_weight': 0.85,
+        'update_frequency': 'hourly',
+        'data_sources': ['FIRMS', 'ERA5', 'MODIS']
     }
-  }
-}
-```
-
-### Structured Logging
-
-All logs are structured JSON with correlation IDs:
-
-```json
-{
-  "timestamp": "2024-01-15T10:30:00.123Z",
-  "level": "info",
-  "logger": "app",
-  "message": "Enterprise AI prediction completed",
-  "location": "San Francisco, CA",
-  "weather_fetch_duration_ms": 245.67,
-  "prediction_duration_ms": 123.45,
-  "total_duration_ms": 369.12,
-  "predictions_count": 7
 }
 ```
 
 ## 🚀 Deployment
 
 ### Railway Deployment
-
-1. **Connect Repository**: Link your GitHub repository to Railway
-2. **Environment Variables**: Set all required environment variables
-3. **Deploy**: Railway will automatically deploy on push to main branch
+1. Connect your GitHub repository to Railway
+2. Set environment variables in Railway dashboard
+3. Deploy automatically on push to main branch
 
 ### Docker Deployment
+```bash
+# Build image
+docker build -t disastroscope-backend .
 
-```dockerfile
-FROM python:3.9-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-
-EXPOSE 5000
-
-CMD ["gunicorn", "-w", "4", "-k", "eventlet", "-b", "0.0.0.0:5000", "app:app"]
+# Run container
+docker run -p 5000:5000 --env-file .env disastroscope-backend
 ```
 
 ### Production Considerations
+- Use multiple worker processes
+- Enable HTTPS with SSL certificates
+- Set up proper logging and monitoring
+- Configure database connections
+- Set up backup and recovery procedures
 
-1. **Database**: Use PostgreSQL for production
-2. **Caching**: Enable Redis for improved performance
-3. **Monitoring**: Set up Prometheus and Jaeger
-4. **SSL**: Configure HTTPS with proper certificates
-5. **Rate Limiting**: Enable and configure rate limiting
-6. **Backup**: Set up automated database backups
+## 🧪 Testing
 
-## 🔍 Troubleshooting
-
-### Common Issues
-
-1. **AI Models Not Loading**
-   - Check model files exist in `models/` directory
-   - Verify model training completed successfully
-   - Check logs for model loading errors
-
-2. **High Response Times**
-   - Monitor system resources (CPU, memory, disk)
-   - Check database connection pool settings
-   - Verify Redis connectivity (if using caching)
-
-3. **API Errors**
-   - Check API key configuration
-   - Verify rate limiting settings
-   - Review CORS configuration
-
-### Debug Mode
-
-Enable debug mode for detailed error information:
-
-```env
-DEBUG=true
-ENVIRONMENT=development
-```
-
-### Log Analysis
-
-Use structured logging for better debugging:
-
+### Unit Tests
 ```bash
-# Filter logs by level
-grep '"level":"error"' app.log
-
-# Filter by specific operation
-grep '"message":"AI prediction"' app.log
-
-# Filter by duration
-grep '"total_duration_ms":[0-9]{4,}' app.log
+pytest tests/unit/
 ```
+
+### Integration Tests
+```bash
+pytest tests/integration/
+```
+
+### Performance Tests
+```bash
+pytest tests/performance/
+```
+
+### Load Testing
+```bash
+# Using Apache Bench
+ab -n 1000 -c 10 http://localhost:5000/api/models
+```
+
+## 📈 Performance Optimization
+
+### Caching Strategy
+- Redis for session and model caching
+- In-memory caching for frequently accessed data
+- CDN for static assets
+
+### Database Optimization
+- Connection pooling
+- Query optimization
+- Indexing strategy
+- Read replicas for scaling
+
+### AI Model Optimization
+- Model quantization
+- Batch prediction
+- GPU acceleration
+- Model serving optimization
+
+## 🔒 Security
+
+### Authentication & Authorization
+- API key authentication
+- Rate limiting
+- Input validation and sanitization
+- CORS configuration
+
+### Data Protection
+- Encryption at rest and in transit
+- Secure environment variable management
+- Regular security updates
+- Vulnerability scanning
+
+## 📚 Documentation
+
+### API Documentation
+- Swagger/OpenAPI specification
+- Interactive API explorer
+- Code examples in multiple languages
+
+### Developer Documentation
+- Architecture diagrams
+- Code style guide
+- Contributing guidelines
+- Troubleshooting guide
 
 ## 🤝 Contributing
 
@@ -385,20 +357,21 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🆘 Support
 
-For support and questions:
+- **Documentation**: [Wiki](https://github.com/Hiruja99k/disastroscope-backend/wiki)
+- **Issues**: [GitHub Issues](https://github.com/Hiruja99k/disastroscope-backend/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Hiruja99k/disastroscope-backend/discussions)
 
-- Create an issue on GitHub
-- Check the documentation
-- Review the troubleshooting guide
+## 🏆 Acknowledgments
 
-## 🔄 Changelog
+- NASA EONET for disaster event data
+- NOAA for weather and climate data
+- FEMA for disaster declaration data
+- GDACS for global disaster alerts
+- OpenWeatherMap for weather API
+- TensorFlow and scikit-learn communities
 
-### Version 2.0.0 (Enterprise)
-- ✨ Advanced ensemble AI models
-- 📊 Comprehensive monitoring and observability
-- 🔒 Enhanced security features
-- ⚡ Performance optimizations
-- 🌐 Real-time WebSocket support
-- 📈 Prometheus metrics integration
-- 🔍 Distributed tracing with OpenTelemetry
-- 🚀 Railway deployment ready
+---
+
+**Version**: 3.0.0  
+**Last Updated**: December 2024  
+**Maintainer**: DisastroScope Team

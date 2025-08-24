@@ -31,17 +31,16 @@ warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 
-# Advanced Enterprise Configuration
+# Advanced Configuration
 EARTHQUAKE_RISK_MULTIPLIER: float = float(os.getenv('EARTHQUAKE_RISK_MULTIPLIER', '0.05'))
 ALLOW_EARTHQUAKE_PREDICTIONS: bool = os.getenv('ALLOW_EARTHQUAKE_PREDICTIONS', 'false').lower() == 'true'
 MODEL_VERSION = os.getenv('MODEL_VERSION', '3.0.0')
 ENSEMBLE_ENABLED = os.getenv('ENSEMBLE_ENABLED', 'true').lower() == 'true'
 DEEP_LEARNING_ENABLED = os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true'
 HYPERPARAMETER_OPTIMIZATION = os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true'
-FEATURE_ENGINEERING_ENABLED = os.getenv('FEATURE_ENGINEERING_ENABLED', 'true').lower() == 'true'
 
 class AdvancedDisasterPredictionService:
-    """Enterprise-level service for managing advanced disaster prediction models"""
+    """Enterprise-level service for managing advanced disaster prediction models with deep learning and ensemble methods"""
     
     def __init__(self):
         self.models = {}
@@ -141,19 +140,6 @@ class AdvancedDisasterPredictionService:
             }
         }
     
-    def _check_model_health(self) -> bool:
-        """Check if all models are healthy and up-to-date"""
-        try:
-            for hazard_type, registry in self.model_registry.items():
-                if hazard_type not in self.models:
-                    return False
-                if hazard_type not in self.scalers:
-                    return False
-            return True
-        except Exception as e:
-            logger.error(f"Model health check failed: {e}")
-            return False
-    
     def create_advanced_features(self, data: pd.DataFrame, hazard_type: str) -> pd.DataFrame:
         """Create advanced engineered features for better prediction accuracy"""
         df = data.copy()
@@ -244,92 +230,115 @@ class AdvancedDisasterPredictionService:
         
         return df
     
-    def _generate_advanced_features(self, weather_data: Dict) -> Dict[str, float]:
-        """Generate advanced features for better prediction accuracy"""
-        features = weather_data.copy()
-        
-        # Add derived features
-        if 'temperature' in features and 'humidity' in features:
-            features['heat_index'] = self._calculate_heat_index(features['temperature'], features['humidity'])
-        
-        if 'wind_speed' in features:
-            features['wind_power'] = features['wind_speed'] ** 3
-        
-        if 'precipitation' in features:
-            features['precipitation_intensity'] = self._categorize_precipitation_intensity(features['precipitation'])
-        
-        return features
-    
-    def _calculate_heat_index(self, temp: float, humidity: float) -> float:
-        """Calculate heat index using NOAA formula"""
-        if temp < 80:
-            return temp
-        hi = 0.5 * (temp + 61.0 + ((temp - 68.0) * 1.2) + (humidity * 0.094))
-        return min(hi, temp + humidity * 0.1)
+    def _calculate_heat_index(self, temp: pd.Series, humidity: pd.Series) -> pd.Series:
+        """Calculate heat index using temperature and humidity"""
+        # Simplified heat index calculation
+        return temp + 0.5 * humidity
     
     def _calculate_comfort_index(self, temp: pd.Series, humidity: pd.Series) -> pd.Series:
         """Calculate comfort index"""
         return (temp + humidity) / 2
     
-    def _categorize_precipitation_intensity(self, precipitation: float) -> float:
-        """Categorize precipitation intensity"""
-        if precipitation < 0.1:
-            return 0.0
-        elif precipitation < 2.5:
-            return 0.3
-        elif precipitation < 7.5:
-            return 0.6
-        else:
-            return 1.0
-    
-    def _generate_synthetic_training_data(self, hazard_type: str, num_samples: int = 10000) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate high-quality synthetic training data for each hazard type"""
-        np.random.seed(42)
-        
-        # Generate base features
-        temperatures = np.random.uniform(-20, 45, num_samples)
-        humidities = np.random.uniform(10, 100, num_samples)
-        pressures = np.random.uniform(950, 1050, num_samples)
-        wind_speeds = np.random.uniform(0, 30, num_samples)
-        wind_directions = np.random.uniform(0, 360, num_samples)
-        precipitations = np.random.uniform(0, 50, num_samples)
-        visibilities = np.random.uniform(0, 20, num_samples)
-        cloud_covers = np.random.uniform(0, 100, num_samples)
-        
-        # Generate advanced features
-        heat_indices = np.array([self._calculate_heat_index(t, h) for t, h in zip(temperatures, humidities)])
-        wind_powers = wind_speeds ** 3
-        precip_intensities = np.array([self._categorize_precipitation_intensity(p) for p in precipitations])
-        
-        # Create feature matrix
-        features = np.column_stack([
-            temperatures, humidities, pressures, wind_speeds, wind_directions,
-            precipitations, visibilities, cloud_covers, heat_indices, wind_powers, precip_intensities
+    def create_deep_neural_network(self, input_dim: int, num_classes: int = 2) -> tf.keras.Model:
+        """Create a deep neural network for disaster prediction"""
+        model = Sequential([
+            Dense(256, activation='relu', input_dim=input_dim),
+            BatchNormalization(),
+            Dropout(0.3),
+            Dense(128, activation='relu'),
+            BatchNormalization(),
+            Dropout(0.3),
+            Dense(64, activation='relu'),
+            BatchNormalization(),
+            Dropout(0.2),
+            Dense(32, activation='relu'),
+            Dense(num_classes, activation='softmax')
         ])
         
-        # Generate labels based on hazard-specific rules
-        labels = np.zeros(num_samples)
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy', 'precision', 'recall']
+        )
         
-        if hazard_type == 'flood':
-            flood_risk = (precipitations / 50.0) * 0.4 + (1 - visibilities / 20.0) * 0.3 + (humidities / 100.0) * 0.3
-            labels = (flood_risk > 0.6).astype(int)
-        elif hazard_type == 'wildfire':
-            wildfire_risk = (temperatures / 45.0) * 0.4 + (1 - humidities / 100.0) * 0.4 + (wind_speeds / 30.0) * 0.2
-            labels = (wildfire_risk > 0.7).astype(int)
-        elif hazard_type == 'storm':
-            storm_risk = (1 - pressures / 1050.0) * 0.4 + (wind_speeds / 30.0) * 0.4 + (cloud_covers / 100.0) * 0.2
-            labels = (storm_risk > 0.6).astype(int)
-        elif hazard_type == 'tornado':
-            tornado_risk = (1 - pressures / 1050.0) * 0.3 + (wind_speeds / 30.0) * 0.4 + (humidities / 100.0) * 0.3
-            labels = (tornado_risk > 0.8).astype(int)
-        elif hazard_type == 'landslide':
-            landslide_risk = (precipitations / 50.0) * 0.6 + (1 - pressures / 1050.0) * 0.4
-            labels = (landslide_risk > 0.7).astype(int)
-        elif hazard_type == 'drought':
-            drought_risk = (1 - precipitations / 50.0) * 0.4 + (temperatures / 45.0) * 0.3 + (1 - humidities / 100.0) * 0.3
-            labels = (drought_risk > 0.7).astype(int)
+        return model
+    
+    def create_lstm_model(self, input_shape: Tuple[int, int], num_classes: int = 2) -> tf.keras.Model:
+        """Create LSTM model for time series prediction"""
+        model = Sequential([
+            LSTM(128, return_sequences=True, input_shape=input_shape),
+            Dropout(0.3),
+            LSTM(64, return_sequences=False),
+            Dropout(0.3),
+            Dense(32, activation='relu'),
+            Dense(num_classes, activation='softmax')
+        ])
         
-        return features, labels
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        
+        return model
+    
+    def create_conv1d_model(self, input_shape: Tuple[int, int], num_classes: int = 2) -> tf.keras.Model:
+        """Create 1D CNN model for sequence prediction"""
+        model = Sequential([
+            Conv1D(64, 3, activation='relu', input_shape=input_shape),
+            MaxPooling1D(2),
+            Conv1D(128, 3, activation='relu'),
+            MaxPooling1D(2),
+            Conv1D(64, 3, activation='relu'),
+            Dense(32, activation='relu'),
+            Dense(num_classes, activation='softmax')
+        ])
+        
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        
+        return model
+    
+    def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, model_type: str) -> Dict[str, Any]:
+        """Optimize hyperparameters using Optuna"""
+        def objective(trial):
+            if model_type == 'random_forest':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+                    'max_depth': trial.suggest_int('max_depth', 3, 20),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10)
+                }
+                model = RandomForestClassifier(**params, random_state=42)
+            
+            elif model_type == 'xgboost':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0)
+                }
+                model = xgb.XGBClassifier(**params, random_state=42)
+            
+            elif model_type == 'lightgbm':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                    'num_leaves': trial.suggest_int('num_leaves', 20, 100)
+                }
+                model = lgb.LGBMClassifier(**params, random_state=42)
+            
+            scores = cross_val_score(model, X, y, cv=5, scoring='roc_auc')
+            return scores.mean()
+        
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=50)
+        
+        return study.best_params
     
     def train_advanced_models(self, epochs: int = 100) -> Dict[str, Any]:
         """Train advanced models with deep learning and ensemble methods"""
@@ -465,233 +474,6 @@ class AdvancedDisasterPredictionService:
         
         return results
     
-    def _ensemble_predict(self, models: Dict, X: np.ndarray) -> np.ndarray:
-        """Make ensemble predictions using weighted voting"""
-        if not ENSEMBLE_ENABLED or len(models) == 1:
-            model_name = list(models.keys())[0]
-            return models[model_name].predict(X)
-        
-        # Weighted ensemble prediction
-        predictions = []
-        weights = []
-        
-        for model_name, model in models.items():
-            pred = model.predict_proba(X)[:, 1]
-            predictions.append(pred)
-            
-            if model_name == 'random_forest':
-                weights.append(0.4)
-            elif model_name == 'gradient_boosting':
-                weights.append(0.35)
-            elif model_name == 'neural_network':
-                weights.append(0.25)
-            else:
-                weights.append(0.1)
-        
-        weights = np.array(weights) / sum(weights)
-        ensemble_pred = np.zeros_like(predictions[0])
-        for pred, weight in zip(predictions, weights):
-            ensemble_pred += pred * weight
-        
-        return (ensemble_pred > 0.5).astype(int)
-    
-    def predict_disaster_risks(self, weather_data: Dict) -> Dict[str, float]:
-        """Predict disaster risks using advanced ensemble models"""
-        predictions = {}
-        
-        # Generate advanced features
-        advanced_features = self._generate_advanced_features(weather_data)
-        
-        # Convert to feature vector
-        feature_vector = self._extract_feature_vector(advanced_features)
-        
-        for hazard_type, registry in self.model_registry.items():
-            if hazard_type == 'earthquake' and not self.allow_earthquake_predictions:
-                predictions[hazard_type] = 0.0
-                continue
-            
-            try:
-                if hazard_type in self.models and hazard_type in self.scalers:
-                    # Use ensemble model
-                    models = self.models[hazard_type]
-                    scaler = self.scalers[hazard_type]
-                    
-                    # Scale features
-                    features_scaled = scaler.transform([feature_vector])
-                    
-                    # Make ensemble prediction
-                    risk_probability = self._ensemble_predict_proba(models, features_scaled)
-                    predictions[hazard_type] = float(risk_probability)
-                    
-                else:
-                    # Fallback to heuristic
-                    predictions[hazard_type] = self._heuristic_prediction(hazard_type, advanced_features)
-                    
-            except Exception as e:
-                logger.error(f"Prediction failed for {hazard_type}: {e}")
-                predictions[hazard_type] = 0.0
-        
-        return predictions
-    
-    def _extract_feature_vector(self, features: Dict) -> List[float]:
-        """Extract feature vector in the correct order"""
-        feature_order = [
-            'temperature', 'humidity', 'pressure', 'wind_speed', 'wind_direction',
-            'precipitation', 'visibility', 'cloud_cover', 'heat_index', 'wind_power', 'precipitation_intensity'
-        ]
-        
-        feature_vector = []
-        for feature in feature_order:
-            feature_vector.append(features.get(feature, 0.0))
-        
-        return feature_vector
-    
-    def _ensemble_predict_proba(self, models: Dict, X: np.ndarray) -> float:
-        """Get ensemble probability prediction"""
-        if not ENSEMBLE_ENABLED or len(models) == 1:
-            model_name = list(models.keys())[0]
-            return models[model_name].predict_proba(X)[0, 1]
-        
-        # Weighted ensemble probability
-        probabilities = []
-        weights = []
-        
-        for model_name, model in models.items():
-            prob = model.predict_proba(X)[0, 1]
-            probabilities.append(prob)
-            
-            if model_name == 'random_forest':
-                weights.append(0.4)
-            elif model_name == 'gradient_boosting':
-                weights.append(0.35)
-            elif model_name == 'neural_network':
-                weights.append(0.25)
-            else:
-                weights.append(0.1)
-        
-        weights = np.array(weights) / sum(weights)
-        ensemble_prob = sum(p * w for p, w in zip(probabilities, weights))
-        
-        return ensemble_prob
-    
-    def _heuristic_prediction(self, hazard_type: str, features: Dict) -> float:
-        """Fallback heuristic prediction"""
-        if hazard_type == 'flood':
-            precip = features.get('precipitation', 0)
-            humidity = features.get('humidity', 50)
-            return min(1.0, (precip / 20.0) * 0.7 + (humidity / 100.0) * 0.3)
-        elif hazard_type == 'wildfire':
-            temp = features.get('temperature', 20)
-            humidity = features.get('humidity', 50)
-            wind_speed = features.get('wind_speed', 5)
-            return min(1.0, (temp / 40.0) * 0.4 + (1 - humidity / 100.0) * 0.4 + (wind_speed / 25.0) * 0.2)
-        elif hazard_type == 'storm':
-            pressure = features.get('pressure', 1013)
-            wind_speed = features.get('wind_speed', 5)
-            return min(1.0, (1 - pressure / 1050.0) * 0.6 + (wind_speed / 25.0) * 0.4)
-        elif hazard_type == 'tornado':
-            pressure = features.get('pressure', 1013)
-            wind_speed = features.get('wind_speed', 5)
-            humidity = features.get('humidity', 50)
-            return min(1.0, (1 - pressure / 1050.0) * 0.4 + (wind_speed / 25.0) * 0.4 + (humidity / 100.0) * 0.2)
-        elif hazard_type == 'landslide':
-            precip = features.get('precipitation', 0)
-            pressure = features.get('pressure', 1013)
-            return min(1.0, (precip / 25.0) * 0.7 + (1 - pressure / 1050.0) * 0.3)
-        elif hazard_type == 'drought':
-            precip = features.get('precipitation', 0)
-            temp = features.get('temperature', 20)
-            humidity = features.get('humidity', 50)
-            return min(1.0, (1 - precip / 25.0) * 0.4 + (temp / 40.0) * 0.3 + (1 - humidity / 100.0) * 0.3)
-        else:
-            return 0.0
-    
-    def _save_models(self, hazard_type: str, models: Dict, scaler: StandardScaler):
-        """Save models and metadata to disk"""
-        try:
-            os.makedirs(self.model_dir, exist_ok=True)
-            
-            # Save models
-            for model_name, model in models.items():
-                model_path = os.path.join(self.model_dir, f'{hazard_type}_{model_name}_model.joblib')
-                joblib.dump(model, model_path)
-            
-            # Save scaler
-            scaler_path = os.path.join(self.model_dir, f'{hazard_type}_scaler.joblib')
-            joblib.dump(scaler, scaler_path)
-            
-            # Save metadata
-            metadata_path = os.path.join(self.model_dir, f'{hazard_type}_metadata.json')
-            with open(metadata_path, 'w') as f:
-                json.dump(self.model_metadata[hazard_type], f, indent=2)
-                
-        except Exception as e:
-            logger.error(f"Failed to save models for {hazard_type}: {e}")
-    
-    def load_or_initialize_models(self):
-        """Load existing models or initialize new ones"""
-        try:
-            for hazard_type in self.model_registry.keys():
-                if hazard_type == 'earthquake' and not self.allow_earthquake_predictions:
-                    continue
-                
-                # Try to load existing models
-                models = {}
-                scaler = None
-                
-                for model_name in self.model_registry[hazard_type]['models']:
-                    model_path = os.path.join(self.model_dir, f'{hazard_type}_{model_name}_model.joblib')
-                    if os.path.exists(model_path):
-                        models[model_name] = joblib.load(model_path)
-                
-                scaler_path = os.path.join(self.model_dir, f'{hazard_type}_scaler.joblib')
-                if os.path.exists(scaler_path):
-                    scaler = joblib.load(scaler_path)
-                
-                metadata_path = os.path.join(self.model_dir, f'{hazard_type}_metadata.json')
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'r') as f:
-                        self.model_metadata[hazard_type] = json.load(f)
-                
-                if models and scaler:
-                    self.models[hazard_type] = models
-                    self.scalers[hazard_type] = scaler
-                    logger.info(f"Loaded existing models for {hazard_type}")
-                else:
-                    logger.info(f"No existing models found for {hazard_type}, will train new ones")
-                    
-        except Exception as e:
-            logger.error(f"Failed to load models: {e}")
-    
-    def get_model_status(self) -> Dict[str, Any]:
-        """Get comprehensive model status information"""
-        status = {
-            'version': MODEL_VERSION,
-            'ensemble_enabled': ENSEMBLE_ENABLED,
-            'models': {},
-            'overall_health': 'healthy',
-            'last_updated': datetime.now().isoformat()
-        }
-        
-        for hazard_type, registry in self.model_registry.items():
-            model_info = {
-                'type': registry['type'],
-                'models_loaded': hazard_type in self.models,
-                'scaler_loaded': hazard_type in self.scalers,
-                'data_sources': registry['data_sources'],
-                'update_frequency': registry['update_frequency']
-            }
-            
-            if hazard_type in self.model_metadata:
-                model_info.update(self.model_metadata[hazard_type])
-            
-            status['models'][hazard_type] = model_info
-            
-            if not model_info['models_loaded'] or not model_info['scaler_loaded']:
-                status['overall_health'] = 'degraded'
-        
-        return status
-
     def _generate_advanced_synthetic_data(self, hazard_type: str, n_samples: int = 10000) -> pd.DataFrame:
         """Generate advanced synthetic data with more realistic patterns"""
         np.random.seed(42)
@@ -800,67 +582,117 @@ class AdvancedDisasterPredictionService:
         
         return df
     
-    def create_deep_neural_network(self, input_dim: int, num_classes: int = 2) -> tf.keras.Model:
-        """Create a deep neural network for disaster prediction"""
-        model = Sequential([
-            Dense(256, activation='relu', input_dim=input_dim),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(128, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(64, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.2),
-            Dense(32, activation='relu'),
-            Dense(num_classes, activation='softmax')
-        ])
+    def predict_disaster_risks(self, location_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Predict disaster risks using advanced ensemble models"""
+        predictions = {}
         
-        model.compile(
-            optimizer=Adam(learning_rate=0.001),
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
-        )
+        for hazard_type in self.model_registry.keys():
+            try:
+                if hazard_type not in self.models or hazard_type not in self.scalers:
+                    logger.warning(f"Models not available for {hazard_type}")
+                    predictions[hazard_type] = {'risk_level': 'unknown', 'confidence': 0.0}
+                    continue
+                
+                # Prepare features
+                feature_columns = self.model_registry[hazard_type]['features'] + self.model_registry[hazard_type]['advanced_features']
+                features = []
+                
+                for feature in feature_columns:
+                    if feature in location_data:
+                        features.append(location_data[feature])
+                    else:
+                        # Use default values for missing features
+                        features.append(self._get_default_feature_value(feature))
+                
+                # Create advanced features
+                feature_dict = dict(zip(feature_columns, features))
+                advanced_data = pd.DataFrame([feature_dict])
+                advanced_data = self.create_advanced_features(advanced_data, hazard_type)
+                
+                # Get available features
+                available_features = [col for col in feature_columns if col in advanced_data.columns]
+                X = advanced_data[available_features].fillna(0)
+                
+                # Scale features
+                X_scaled = self.scalers[hazard_type].transform(X)
+                
+                # Get ensemble prediction
+                ensemble_models = self.models[hazard_type]
+                predictions_list = []
+                
+                for name, model in ensemble_models.items():
+                    if name == 'ensemble':
+                        continue
+                    
+                    if hasattr(model, 'predict_proba'):
+                        pred_proba = model.predict_proba(X_scaled)[0, 1]
+                    else:
+                        pred_proba = model.predict(X_scaled)[0]
+                    
+                    predictions_list.append(pred_proba)
+                
+                # Calculate weighted ensemble prediction
+                if predictions_list:
+                    ensemble_weight = self.model_registry[hazard_type]['ensemble_weight']
+                    ensemble_pred = np.mean(predictions_list) * ensemble_weight
+                    
+                    # Determine risk level
+                    if ensemble_pred < 0.2:
+                        risk_level = 'low'
+                    elif ensemble_pred < 0.5:
+                        risk_level = 'medium'
+                    elif ensemble_pred < 0.8:
+                        risk_level = 'high'
+                    else:
+                        risk_level = 'critical'
+                    
+                    predictions[hazard_type] = {
+                        'risk_level': risk_level,
+                        'probability': float(ensemble_pred),
+                        'confidence': float(np.std(predictions_list)),
+                        'models_used': list(ensemble_models.keys()),
+                        'features_used': available_features
+                    }
+                else:
+                    predictions[hazard_type] = {'risk_level': 'unknown', 'confidence': 0.0}
+                
+            except Exception as e:
+                logger.error(f"Prediction failed for {hazard_type}: {e}")
+                predictions[hazard_type] = {'risk_level': 'error', 'confidence': 0.0}
         
-        return model
+        return predictions
     
-    def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, model_type: str) -> Dict[str, Any]:
-        """Optimize hyperparameters using Optuna"""
-        def objective(trial):
-            if model_type == 'random_forest':
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                    'max_depth': trial.suggest_int('max_depth', 3, 20),
-                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
-                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10)
-                }
-                model = RandomForestClassifier(**params, random_state=42)
-            
-            elif model_type == 'xgboost':
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                    'max_depth': trial.suggest_int('max_depth', 3, 10),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
-                    'subsample': trial.suggest_float('subsample', 0.6, 1.0)
-                }
-                model = xgb.XGBClassifier(**params, random_state=42)
-            
-            elif model_type == 'lightgbm':
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                    'max_depth': trial.suggest_int('max_depth', 3, 10),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
-                    'num_leaves': trial.suggest_int('num_leaves', 20, 100)
-                }
-                model = lgb.LGBMClassifier(**params, random_state=42)
-            
-            scores = cross_val_score(model, X, y, cv=5, scoring='roc_auc')
-            return scores.mean()
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=50)
-        
-        return study.best_params
+    def _get_default_feature_value(self, feature: str) -> float:
+        """Get default value for missing features"""
+        defaults = {
+            'temperature': 20.0,
+            'humidity': 60.0,
+            'pressure': 1013.0,
+            'wind_speed': 5.0,
+            'precipitation': 2.0,
+            'visibility': 10.0,
+            'cloud_cover': 50.0,
+            'soil_moisture': 0.3,
+            'river_level': 5.0,
+            'drainage_capacity': 0.5,
+            'elevation': 500.0,
+            'slope': 5.0,
+            'fuel_moisture': 15.0,
+            'vegetation_index': 0.5,
+            'drought_index': 2.0,
+            'fire_weather_index': 50.0,
+            'wind_direction': 180.0,
+            'atmospheric_stability': 0.0,
+            'convective_available_potential_energy': 1000.0,
+            'wind_shear': 10.0,
+            'helicity': 100.0,
+            'soil_type': 3,
+            'vegetation_cover': 50.0,
+            'geological_structure': 2,
+            'evapotranspiration': 4.0,
+            'groundwater_level': -5.0
+        }
+        return defaults.get(feature, 0.0)
     
     def get_model_performance(self) -> Dict[str, Any]:
         """Get performance metrics for all models"""
@@ -869,6 +701,101 @@ class AdvancedDisasterPredictionService:
     def get_feature_importance(self) -> Dict[str, Any]:
         """Get feature importance for all models"""
         return self.feature_importance
+    
+    def save_models(self):
+        """Save all trained models"""
+        os.makedirs(self.model_dir, exist_ok=True)
+        
+        for hazard_type, models in self.models.items():
+            for model_name, model in models.items():
+                if hasattr(model, 'save'):
+                    # Save TensorFlow models
+                    model_path = os.path.join(self.model_dir, f"{hazard_type}_{model_name}.h5")
+                    model.save(model_path)
+                else:
+                    # Save scikit-learn models
+                    model_path = os.path.join(self.model_dir, f"{hazard_type}_{model_name}.pkl")
+                    joblib.dump(model, model_path)
+        
+        # Save scalers
+        for hazard_type, scaler in self.scalers.items():
+            scaler_path = os.path.join(self.model_dir, f"{hazard_type}_scaler.pkl")
+            joblib.dump(scaler, scaler_path)
+        
+        # Save metadata
+        metadata = {
+            'model_performance': self.model_performance,
+            'feature_importance': self.feature_importance,
+            'model_registry': self.model_registry,
+            'version': MODEL_VERSION,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        metadata_path = os.path.join(self.model_dir, 'metadata.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    
+    def load_or_initialize_models(self):
+        """Load existing models or initialize new ones"""
+        try:
+            if os.path.exists(self.model_dir):
+                # Load metadata
+                metadata_path = os.path.join(self.model_dir, 'metadata.json')
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                        self.model_performance = metadata.get('model_performance', {})
+                        self.feature_importance = metadata.get('feature_importance', {})
+                
+                # Load models and scalers
+                for hazard_type in self.model_registry.keys():
+                    models = {}
+                    
+                    # Load scikit-learn models
+                    for model_name in ['random_forest', 'xgboost', 'lightgbm']:
+                        model_path = os.path.join(self.model_dir, f"{hazard_type}_{model_name}.pkl")
+                        if os.path.exists(model_path):
+                            models[model_name] = joblib.load(model_path)
+                    
+                    # Load TensorFlow models
+                    for model_name in ['deep_neural_network', 'lstm', 'conv1d']:
+                        model_path = os.path.join(self.model_dir, f"{hazard_type}_{model_name}.h5")
+                        if os.path.exists(model_path):
+                            try:
+                                models[model_name] = tf.keras.models.load_model(model_path)
+                            except Exception as e:
+                                logger.warning(f"Failed to load {model_name} for {hazard_type}: {e}")
+                    
+                    if models:
+                        self.models[hazard_type] = models
+                    
+                    # Load scaler
+                    scaler_path = os.path.join(self.model_dir, f"{hazard_type}_scaler.pkl")
+                    if os.path.exists(scaler_path):
+                        self.scalers[hazard_type] = joblib.load(scaler_path)
+        
+        except Exception as e:
+            logger.error(f"Failed to load models: {e}")
+    
+    def _check_model_health(self) -> bool:
+        """Check if all models are healthy and ready"""
+        try:
+            if not self.models:
+                return False
+            
+            for hazard_type, models in self.models.items():
+                if not models:
+                    return False
+                
+                for model_name, model in models.items():
+                    if model is None:
+                        return False
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Model health check failed: {e}")
+            return False
 
-# Initialize the enterprise service
-ai_prediction_service = AdvancedDisasterPredictionService()
+# Initialize the advanced service
+advanced_prediction_service = AdvancedDisasterPredictionService()

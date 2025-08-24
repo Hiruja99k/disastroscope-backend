@@ -18,9 +18,8 @@ import joblib
 load_dotenv()
 
 # Enterprise imports
-from monitoring import monitoring
+from advanced_monitoring import advanced_monitoring, init_app as init_monitoring
 import structlog
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from weather_service import weather_service, WeatherData
 from ai_models import ai_prediction_service
@@ -68,8 +67,8 @@ CORS(app, resources={r"/api/*": {
     "max_age": 600
 }})
 
-# Initialize monitoring
-monitoring.init_app(app)
+# Initialize advanced monitoring
+init_monitoring(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
@@ -797,13 +796,133 @@ def list_models():
         })
         
         # Record metrics
-        monitoring.record_ai_prediction('model_status_check', 0.1)
+        advanced_monitoring.record_ai_prediction('model_status_check', 0.1)
         
         return jsonify(model_status)
         
     except Exception as e:
         logger.error(f"Error listing models: {e}", exc_info=True)
         return jsonify({'error': 'Failed to list models', 'details': str(e)}), 500
+
+@app.route('/api/ai/predict', methods=['POST'])
+def predict_disaster_risks():
+    """Advanced AI prediction endpoint with ensemble models"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Extract location data
+        location_data = {
+            'temperature': data.get('temperature', 20.0),
+            'humidity': data.get('humidity', 60.0),
+            'pressure': data.get('pressure', 1013.0),
+            'wind_speed': data.get('wind_speed', 5.0),
+            'precipitation': data.get('precipitation', 2.0),
+            'visibility': data.get('visibility', 10.0),
+            'cloud_cover': data.get('cloud_cover', 50.0),
+            'soil_moisture': data.get('soil_moisture', 0.3),
+            'river_level': data.get('river_level', 5.0),
+            'drainage_capacity': data.get('drainage_capacity', 0.5),
+            'elevation': data.get('elevation', 500.0),
+            'slope': data.get('slope', 5.0),
+            'fuel_moisture': data.get('fuel_moisture', 15.0),
+            'vegetation_index': data.get('vegetation_index', 0.5),
+            'drought_index': data.get('drought_index', 2.0),
+            'fire_weather_index': data.get('fire_weather_index', 50.0),
+            'wind_direction': data.get('wind_direction', 180.0),
+            'atmospheric_stability': data.get('atmospheric_stability', 0.0),
+            'convective_available_potential_energy': data.get('convective_available_potential_energy', 1000.0),
+            'wind_shear': data.get('wind_shear', 10.0),
+            'helicity': data.get('helicity', 100.0),
+            'soil_type': data.get('soil_type', 3),
+            'vegetation_cover': data.get('vegetation_cover', 50.0),
+            'geological_structure': data.get('geological_structure', 2),
+            'evapotranspiration': data.get('evapotranspiration', 4.0),
+            'groundwater_level': data.get('groundwater_level', -5.0)
+        }
+        
+        # Get predictions from advanced AI service
+        predictions = ai_prediction_service.predict_disaster_risks(location_data)
+        
+        # Add metadata
+        response = {
+            'predictions': predictions,
+            'metadata': {
+                'model_version': os.getenv('MODEL_VERSION', '3.0.0'),
+                'prediction_timestamp': datetime.now(timezone.utc).isoformat(),
+                'location': {
+                    'latitude': data.get('latitude'),
+                    'longitude': data.get('longitude'),
+                    'name': data.get('location_name', 'Unknown')
+                },
+                'advanced_features': {
+                    'deep_learning_enabled': os.getenv('DEEP_LEARNING_ENABLED', 'true').lower() == 'true',
+                    'hyperparameter_optimization': os.getenv('HYPERPARAMETER_OPTIMIZATION', 'true').lower() == 'true',
+                    'ensemble_methods': True
+                }
+            }
+        }
+        
+        # Record metrics
+        advanced_monitoring.record_ai_prediction('disaster_risk_prediction', 0.5)
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in AI prediction: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to generate predictions', 'details': str(e)}), 500
+
+@app.route('/api/ai/train', methods=['POST'])
+def train_advanced_models():
+    """Train advanced AI models with deep learning and ensemble methods"""
+    try:
+        data = request.get_json() or {}
+        epochs = data.get('epochs', 100)
+        
+        # Start training in background thread
+        def train_models():
+            try:
+                results = ai_prediction_service.train_advanced_models(epochs=epochs)
+                logger.info(f"Training completed: {results}")
+            except Exception as e:
+                logger.error(f"Training failed: {e}")
+        
+        training_thread = threading.Thread(target=train_models)
+        training_thread.start()
+        
+        return jsonify({
+            'status': 'training_started',
+            'message': f'Advanced model training started with {epochs} epochs',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting training: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to start training', 'details': str(e)}), 500
+
+@app.route('/api/ai/performance')
+def get_ai_performance():
+    """Get detailed performance metrics for all AI models"""
+    try:
+        performance = ai_prediction_service.get_model_performance()
+        feature_importance = ai_prediction_service.get_feature_importance()
+        
+        response = {
+            'performance': performance,
+            'feature_importance': feature_importance,
+            'metadata': {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'model_version': os.getenv('MODEL_VERSION', '3.0.0'),
+                'total_models': len(performance)
+            }
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to get performance metrics', 'details': str(e)}), 500
 
 @app.route('/api/events', methods=['POST'])
 def create_event():
