@@ -120,8 +120,8 @@ def home():
     })
 
 @app.route('/api/health')
-def health_check():
-    """Health check endpoint"""
+def api_health_check():
+    """API health check endpoint"""
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
