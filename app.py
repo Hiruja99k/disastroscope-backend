@@ -14,6 +14,7 @@ from contextlib import suppress
 import joblib
 
 # Load environment variables from .env (must happen BEFORE importing modules that read env)
+# Redeploy trigger - ensuring backend starts properly
 load_dotenv()
 
 # Enterprise imports
