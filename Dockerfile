@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential system dependencies only
+# Install minimal essential system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -14,25 +14,10 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     libssl-dev \
     libffi-dev \
-    libgomp1 \
-    libblas-dev \
-    liblapack-dev \
-    libatlas-base-dev \
     gfortran \
     pkg-config \
-    libhdf5-dev \
-    libhdf5-serial-dev \
-    libhdf5-103 \
     python3-dev \
-    python3-pip \
-    python3-setuptools \
-    python3-wheel \
-    python3-cffi \
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
     wget \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
