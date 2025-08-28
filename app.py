@@ -377,7 +377,7 @@ class PredictionEngine:
         for disaster_type, algorithm in self.algorithms.items():
             try:
                 predictions[disaster_type] = algorithm(request_data)
-    except Exception as e:
+            except Exception as e:
                 logger.error(f"Error predicting {disaster_type}: {e}")
                 predictions[disaster_type] = 0.0
         
@@ -897,7 +897,7 @@ def get_predictions_near():
             "center": {"latitude": lat, "longitude": lng},
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error getting predictions near location: {e}")
         return jsonify({"error": "Failed to get nearby predictions"}), 500
 
