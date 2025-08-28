@@ -377,7 +377,7 @@ class PredictionEngine:
         for disaster_type, algorithm in self.algorithms.items():
             try:
                 predictions[disaster_type] = algorithm(request_data)
-            except Exception as e:
+    except Exception as e:
                 logger.error(f"Error predicting {disaster_type}: {e}")
                 predictions[disaster_type] = 0.0
         
@@ -807,6 +807,34 @@ def get_weather(city):
         logger.error(f"Error getting weather for {city}: {e}")
         return jsonify({"error": "Failed to get weather data"}), 500
 
+@app.route('/api/weather/current')
+@rate_limit
+def get_weather_by_coords():
+    """Get weather data for coordinates"""
+    try:
+        lat = request.args.get('lat', type=float)
+        lon = request.args.get('lon', type=float)
+        
+        if not lat or not lon:
+            return jsonify({'error': 'Missing lat/lon parameters'}), 400
+            
+        # You can integrate with OpenWeatherMap API here
+        # For now, return mock data
+        weather_data = {
+            'temperature': random.uniform(15, 35),
+            'humidity': random.uniform(30, 90),
+            'pressure': random.uniform(1000, 1020),
+            'wind_speed': random.uniform(0, 25),
+            'precipitation': random.uniform(0, 50),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        return jsonify(weather_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting weather by coordinates: {e}")
+        return jsonify({"error": "Failed to get weather data"}), 500
+
 # ============================================================================
 # LOCATION-BASED ENDPOINTS
 # ============================================================================
@@ -869,9 +897,66 @@ def get_predictions_near():
             "center": {"latitude": lat, "longitude": lng},
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
-    except Exception as e:
+        except Exception as e:
         logger.error(f"Error getting predictions near location: {e}")
         return jsonify({"error": "Failed to get nearby predictions"}), 500
+
+@app.route('/api/location/analyze/coords', methods=['POST'])
+@rate_limit
+def analyze_location_by_coords():
+    """Analyze location by coordinates"""
+    try:
+        data = request.get_json()
+        lat = data.get('lat')
+        lon = data.get('lon')
+        
+        if not lat or not lon:
+            return jsonify({'error': 'Missing lat/lon parameters'}), 400
+            
+        # You can integrate with elevation APIs, soil data, etc.
+        # For now, return mock data
+        location_data = {
+            'elevation': random.uniform(0, 2000),
+            'soil_type': random.choice(['Loamy', 'Sandy', 'Clay', 'Rocky']),
+            'land_use': random.choice(['Urban', 'Rural', 'Forest', 'Agricultural']),
+            'historical_events': 'Sample historical data',
+            'population_density': random.uniform(10, 1000)
+        }
+        
+        return jsonify(location_data)
+        
+    except Exception as e:
+        logger.error(f"Error analyzing location: {e}")
+        return jsonify({"error": "Failed to analyze location"}), 500
+
+@app.route('/api/geocode')
+@rate_limit
+def geocode_location():
+    """Geocode a location query"""
+    try:
+        query = request.args.get('query')
+        limit = request.args.get('limit', 5, type=int)
+        
+        if not query:
+            return jsonify({'error': 'Missing query parameter'}), 400
+            
+        # You can integrate with OpenCage, Google Maps, or other geocoding services
+        # For now, return mock data
+        geocode_results = [
+            {
+                'name': query,
+                'lat': random.uniform(-90, 90),
+                'lon': random.uniform(-180, 180),
+                'country': 'Sample Country',
+                'state': 'Sample State'
+            }
+        ]
+        
+        return jsonify(geocode_results[:limit])
+        
+    except Exception as e:
+        logger.error(f"Error geocoding location: {e}")
+        return jsonify({"error": "Failed to geocode location"}), 500
 
 # ============================================================================
 # ERROR HANDLERS
