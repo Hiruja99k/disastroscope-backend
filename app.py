@@ -818,16 +818,54 @@ def get_weather_by_coords():
         if not lat or not lon:
             return jsonify({'error': 'Missing lat/lon parameters'}), 400
             
-        # You can integrate with OpenWeatherMap API here
-        # For now, return mock data
-        weather_data = {
-            'temperature': random.uniform(15, 35),
-            'humidity': random.uniform(30, 90),
-            'pressure': random.uniform(1000, 1020),
-            'wind_speed': random.uniform(0, 25),
-            'precipitation': random.uniform(0, 50),
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        }
+        # Try OpenWeatherMap API first, fallback to mock data
+        openweather_api_key = os.getenv('OPENWEATHER_API_KEY')
+        if openweather_api_key:
+            try:
+                import requests
+                url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={openweather_api_key}&units=metric"
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    weather_data = {
+                        'temperature': round(data['main']['temp'], 1),
+                        'humidity': round(data['main']['humidity'], 1),
+                        'pressure': round(data['main']['pressure'], 1),
+                        'wind_speed': round(data['wind']['speed'], 1),
+                        'precipitation': round(data.get('rain', {}).get('1h', 0), 1),
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+                else:
+                    # Fallback to mock data if API fails
+                    weather_data = {
+                        'temperature': round(random.uniform(15, 35), 1),
+                        'humidity': round(random.uniform(30, 90), 1),
+                        'pressure': round(random.uniform(1000, 1020), 1),
+                        'wind_speed': round(random.uniform(0, 25), 1),
+                        'precipitation': round(random.uniform(0, 50), 1),
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+            except Exception as e:
+                logger.warning(f"OpenWeatherMap API failed, using mock data: {e}")
+                # Fallback to mock data
+                weather_data = {
+                    'temperature': round(random.uniform(15, 35), 1),
+                    'humidity': round(random.uniform(30, 90), 1),
+                    'pressure': round(random.uniform(1000, 1020), 1),
+                    'wind_speed': round(random.uniform(0, 25), 1),
+                    'precipitation': round(random.uniform(0, 50), 1),
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+        else:
+            # No API key, use mock data
+            weather_data = {
+                'temperature': round(random.uniform(15, 35), 1),
+                'humidity': round(random.uniform(30, 90), 1),
+                'pressure': round(random.uniform(1000, 1020), 1),
+                'wind_speed': round(random.uniform(0, 25), 1),
+                'precipitation': round(random.uniform(0, 50), 1),
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
         
         return jsonify(weather_data)
         
@@ -914,13 +952,13 @@ def analyze_location_by_coords():
             return jsonify({'error': 'Missing lat/lon parameters'}), 400
             
         # You can integrate with elevation APIs, soil data, etc.
-        # For now, return mock data
+        # For now, return mock data with rounded values
         location_data = {
-            'elevation': random.uniform(0, 2000),
+            'elevation': round(random.uniform(0, 2000), 0),
             'soil_type': random.choice(['Loamy', 'Sandy', 'Clay', 'Rocky']),
             'land_use': random.choice(['Urban', 'Rural', 'Forest', 'Agricultural']),
             'historical_events': 'Sample historical data',
-            'population_density': random.uniform(10, 1000)
+            'population_density': round(random.uniform(10, 1000), 0)
         }
         
         return jsonify(location_data)
@@ -941,12 +979,12 @@ def geocode_location():
             return jsonify({'error': 'Missing query parameter'}), 400
             
         # You can integrate with OpenCage, Google Maps, or other geocoding services
-        # For now, return mock data
+        # For now, return mock data with rounded coordinates
         geocode_results = [
             {
                 'name': query,
-                'lat': random.uniform(-90, 90),
-                'lon': random.uniform(-180, 180),
+                'lat': round(random.uniform(-90, 90), 4),
+                'lon': round(random.uniform(-180, 180), 4),
                 'country': 'Sample Country',
                 'state': 'Sample State'
             }
