@@ -1068,8 +1068,26 @@ def global_risk_analysis():
                 geocoding_url = f"https://api.opencagedata.com/geocode/v1/json?q={query}&key={api_key}&limit=1"
                 logger.info(f"Geocoding URL: {geocoding_url}")
                 
-                response = requests.get(geocoding_url, timeout=10)
-                logger.info(f"Geocoding response status: {response.status_code}")
+                # Add retry mechanism for DNS issues
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = requests.get(geocoding_url, timeout=15)
+                        logger.info(f"Geocoding response status: {response.status_code}")
+                        break
+                    except requests.exceptions.ConnectionError as e:
+                        if "NameResolutionError" in str(e) or "Lookup timed out" in str(e):
+                            logger.warning(f"DNS resolution failed for attempt {attempt + 1}/{max_retries}: {e}")
+                            if attempt < max_retries - 1:
+                                time.sleep(2)  # Wait before retry
+                                continue
+                            else:
+                                raise e
+                        else:
+                            raise e
+                    except Exception as e:
+                        logger.error(f"Geocoding request failed: {e}")
+                        raise e
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -1107,12 +1125,54 @@ def global_risk_analysis():
                     region = 'Unknown Region'
                     
             except Exception as e:
-                # Fallback to random coordinates if any error occurs
+                # Fallback to predefined coordinates for common cities
                 logger.error(f"❌ Geocoding exception for {location_query}: {str(e)}")
-                latitude = round(random.uniform(-90, 90), 4)
-                longitude = round(random.uniform(-180, 180), 4)
-                country = 'Unknown Country'
-                region = 'Unknown Region'
+                
+                # Fallback geocoding for common cities
+                fallback_locations = {
+                    'tokyo': {'lat': 35.6762, 'lng': 139.6503, 'country': 'Japan', 'region': 'Tokyo'},
+                    'new york': {'lat': 40.7128, 'lng': -74.0060, 'country': 'United States', 'region': 'New York'},
+                    'london': {'lat': 51.5074, 'lng': -0.1278, 'country': 'United Kingdom', 'region': 'England'},
+                    'paris': {'lat': 48.8566, 'lng': 2.3522, 'country': 'France', 'region': 'Île-de-France'},
+                    'sydney': {'lat': -33.8688, 'lng': 151.2093, 'country': 'Australia', 'region': 'New South Wales'},
+                    'mumbai': {'lat': 19.0760, 'lng': 72.8777, 'country': 'India', 'region': 'Maharashtra'},
+                    'beijing': {'lat': 39.9042, 'lng': 116.4074, 'country': 'China', 'region': 'Beijing'},
+                    'moscow': {'lat': 55.7558, 'lng': 37.6176, 'country': 'Russia', 'region': 'Moscow'},
+                    'cairo': {'lat': 30.0444, 'lng': 31.2357, 'country': 'Egypt', 'region': 'Cairo'},
+                    'rio de janeiro': {'lat': -22.9068, 'lng': -43.1729, 'country': 'Brazil', 'region': 'Rio de Janeiro'},
+                    'mexico city': {'lat': 19.4326, 'lng': -99.1332, 'country': 'Mexico', 'region': 'Mexico City'},
+                    'istanbul': {'lat': 41.0082, 'lng': 28.9784, 'country': 'Turkey', 'region': 'Istanbul'},
+                    'seoul': {'lat': 37.5665, 'lng': 126.9780, 'country': 'South Korea', 'region': 'Seoul'},
+                    'singapore': {'lat': 1.3521, 'lng': 103.8198, 'country': 'Singapore', 'region': 'Singapore'},
+                    'dubai': {'lat': 25.2048, 'lng': 55.2708, 'country': 'United Arab Emirates', 'region': 'Dubai'},
+                    'bangkok': {'lat': 13.7563, 'lng': 100.5018, 'country': 'Thailand', 'region': 'Bangkok'},
+                    'jakarta': {'lat': -6.2088, 'lng': 106.8456, 'country': 'Indonesia', 'region': 'Jakarta'},
+                    'manila': {'lat': 14.5995, 'lng': 120.9842, 'country': 'Philippines', 'region': 'Metro Manila'},
+                    'kuala lumpur': {'lat': 3.1390, 'lng': 101.6869, 'country': 'Malaysia', 'region': 'Kuala Lumpur'},
+                    'ho chi minh city': {'lat': 10.8231, 'lng': 106.6297, 'country': 'Vietnam', 'region': 'Ho Chi Minh City'}
+                }
+                
+                # Try to find a match in fallback locations
+                query_lower = location_query.lower()
+                found_fallback = False
+                
+                for city, coords in fallback_locations.items():
+                    if city in query_lower or any(word in query_lower for word in city.split()):
+                        latitude = coords['lat']
+                        longitude = coords['lng']
+                        country = coords['country']
+                        region = coords['region']
+                        found_fallback = True
+                        logger.info(f"✅ Using fallback coordinates for {location_query}: {latitude}, {longitude} in {region}, {country}")
+                        break
+                
+                if not found_fallback:
+                    # If no fallback found, use random coordinates
+                    latitude = round(random.uniform(-90, 90), 4)
+                    longitude = round(random.uniform(-180, 180), 4)
+                    country = 'Unknown Country'
+                    region = 'Unknown Region'
+                    logger.warning(f"❌ No fallback found for {location_query}, using random coordinates")
         else:
             # If coordinates are provided, reverse geocode to get location info
             try:
