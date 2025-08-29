@@ -536,6 +536,18 @@ def api_health_check():
         "version": Config.API_VERSION
     })
 
+@app.route('/api/debug/env')
+@rate_limit
+def debug_environment():
+    """Debug environment variables"""
+    api_key = os.getenv('OPENCAGE_API_KEY', 'NOT_FOUND')
+    return jsonify({
+        "opencage_api_key": api_key[:8] + "..." if api_key != 'NOT_FOUND' and len(api_key) > 8 else api_key,
+        "opencage_api_key_length": len(api_key) if api_key != 'NOT_FOUND' else 0,
+        "environment": os.getenv('ENVIRONMENT', 'NOT_SET'),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
 @app.route('/api/metrics')
 @rate_limit
 def get_metrics():
