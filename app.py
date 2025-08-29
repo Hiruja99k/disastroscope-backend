@@ -1359,64 +1359,39 @@ def global_risk_analysis():
                         break
                     
             elif disaster_type == 'Cyclones':
-                # Worldwide cyclone risk for any location
-                if tropical_zones or (23.5 <= abs(latitude) <= 35):
-                    # Major cyclone basins with precise boundaries
+                # Conservative: require tropical band, basin match, and coastal proximity
+                risk_score = 0.05
+                if (5 <= abs(latitude) <= 35) and coastal_proximity:
                     atlantic_basin = (5 <= latitude <= 35 and -100 <= longitude <= -30)
                     pacific_basin = (5 <= latitude <= 35 and (120 <= longitude <= 180 or -180 <= longitude <= -120))
                     indian_basin = (-35 <= latitude <= 25 and (30 <= longitude <= 120))
                     australian_basin = (-35 <= latitude <= -10 and (110 <= longitude <= 180))
-                    
                     if atlantic_basin:
-                        risk_score = 0.7
-                    elif pacific_basin:
-                        risk_score = 0.8  # Pacific has more cyclones
-                    elif indian_basin:
-                        risk_score = 0.7
-                    elif australian_basin:
                         risk_score = 0.6
-                    else:
-                        risk_score = 0.4
-                else:
-                    risk_score = 0.05
+                    elif pacific_basin:
+                        risk_score = 0.7
+                    elif indian_basin:
+                        risk_score = 0.6
+                    elif australian_basin:
+                        risk_score = 0.5
                     
             elif disaster_type == 'Floods':
-                # Worldwide flood risk analysis for any location
-                # Coastal proximity
-                if coastal_proximity:
-                    coastal_risk = 0.6
-                else:
-                    coastal_risk = 0.1
-                
-                # Climate zone factors
+                # Conservative: higher mainly for coastal/tropical; inland temperate stays low
+                coastal_risk = 0.5 if coastal_proximity else 0.1
                 if tropical_zones:
-                    climate_risk = 0.5  # Heavy rainfall
+                    climate_risk = 0.4
                 elif temperate_zones:
-                    climate_risk = 0.3  # Moderate rainfall
+                    climate_risk = 0.2
                 else:
-                    climate_risk = 0.1  # Low rainfall
-                
-                # Elevation factors (simulated based on coordinates)
-                # Higher latitudes often have more varied elevation
-                elevation_factor = 0.3 + 0.4 * (abs(latitude) / 90.0)
-                
-                # River basin proximity (simulated)
-                river_factor = 0.2 + 0.3 * abs(math.sin(longitude * math.pi / 180))
-                
-                risk_score = (coastal_risk * 0.4 + climate_risk * 0.3 + 
-                            elevation_factor * 0.2 + river_factor * 0.1)
+                    climate_risk = 0.1
+                # Keep synthetic factors small to avoid false inflation
+                elevation_factor = 0.1 + 0.2 * (abs(latitude) / 90.0)
+                river_factor = 0.05 + 0.1 * abs(math.sin(longitude * math.pi / 180))
+                risk_score = min(0.6, (coastal_risk * 0.5 + climate_risk * 0.3 + elevation_factor * 0.1 + river_factor * 0.1))
                     
             elif disaster_type == 'Droughts':
-                # Worldwide drought risk for any location
-                # Climate zone analysis
-                if tropical_zones:
-                    base_drought = 0.2  # Tropical regions have wet/dry seasons
-                elif temperate_zones:
-                    base_drought = 0.4  # Temperate zones can have droughts
-                else:
-                    base_drought = 0.6  # Polar regions are generally dry
-                
-                # Known arid zones
+                # Conservative: meaningful risk primarily in known arid belts
+                base_drought = 0.15
                 arid_zones = [
                     {'lat_range': (20, 35), 'lng_range': (-120, -80)},   # Southwest US
                     {'lat_range': (15, 35), 'lng_range': (-20, 60)},     # Sahara
@@ -1426,29 +1401,19 @@ def global_risk_analysis():
                     {'lat_range': (25, 40), 'lng_range': (70, 90)},      # Thar Desert
                     {'lat_range': (35, 45), 'lng_range': (-120, -100)},  # Great Basin
                 ]
-                
                 risk_score = base_drought
                 for zone in arid_zones:
                     if (zone['lat_range'][0] <= latitude <= zone['lat_range'][1] and
                         zone['lng_range'][0] <= longitude <= zone['lng_range'][1]):
-                        risk_score = 0.8
+                        risk_score = 0.7
                         break
-                        
-                # Continental interior factor
-                if abs(longitude) > 60:  # Continental interiors
-                    risk_score = min(0.9, risk_score * 1.3)
+                # Light bump for continental interiors, capped
+                if abs(longitude) > 60:
+                    risk_score = min(0.6, risk_score + 0.05)
                         
             elif disaster_type == 'Wildfires':
-                # Worldwide wildfire risk for any location
-                # Climate factors
-                if tropical_zones:
-                    base_fire = 0.3  # Tropical forests can burn
-                elif temperate_zones:
-                    base_fire = 0.5  # Temperate forests and grasslands
-                else:
-                    base_fire = 0.2  # Polar regions have less vegetation
-                
-                # Known high-risk regions
+                # Conservative: meaningful risk mostly in known fire-prone regions
+                base_fire = 0.15
                 fire_zones = [
                     {'lat_range': (30, 45), 'lng_range': (-120, -80)},   # California
                     {'lat_range': (35, 45), 'lng_range': (-10, 40)},     # Mediterranean
@@ -1457,23 +1422,16 @@ def global_risk_analysis():
                     {'lat_range': (50, 70), 'lng_range': (20, 180)},     # Siberian taiga
                     {'lat_range': (40, 60), 'lng_range': (-80, -40)},    # Eastern US forests
                 ]
-                
                 risk_score = base_fire
                 for zone in fire_zones:
                     if (zone['lat_range'][0] <= latitude <= zone['lat_range'][1] and
                         zone['lng_range'][0] <= longitude <= zone['lng_range'][1]):
-                        risk_score = 0.7
+                        risk_score = 0.6
                         break
                         
             elif disaster_type == 'Landslides':
-                # Worldwide landslide risk for any location
-                # Elevation and slope factors
-                if abs(latitude) > 30:  # Higher latitudes often have mountains
-                    base_landslide = 0.4
-                else:
-                    base_landslide = 0.2
-                
-                # Known mountainous regions
+                # Conservative: require presence in mountainous belts
+                base_landslide = 0.1
                 mountain_zones = [
                     {'lat_range': (20, 50), 'lng_range': (70, 140)},     # Himalayas
                     {'lat_range': (30, 50), 'lng_range': (-125, -105)},  # Rockies
@@ -1483,18 +1441,13 @@ def global_risk_analysis():
                     {'lat_range': (-50, -30), 'lng_range': (-80, -50)},  # Andes
                     {'lat_range': (-40, -20), 'lng_range': (110, 150)},  # Australian Alps
                 ]
-                
                 risk_score = base_landslide
                 for zone in mountain_zones:
                     if (zone['lat_range'][0] <= latitude <= zone['lat_range'][1] and
                         zone['lng_range'][0] <= longitude <= zone['lng_range'][1]):
-                        risk_score = 0.6
+                        risk_score = 0.5
                         break
-                        
-                # Additional factors for any location
-                # Longitude affects mountain ranges
-                longitude_factor = 0.2 + 0.3 * abs(math.sin(longitude * math.pi / 90))
-                risk_score = min(0.8, risk_score + longitude_factor)
+                # Remove synthetic longitudes to prevent false positives
             else:
                 risk_score = base_risk
                 
