@@ -1116,13 +1116,36 @@ def global_risk_analysis():
                         region = 'Unknown Region'
                         logger.warning(f"❌ Geocoding failed for {location_query} - no results found, using fallback coordinates")
                 else:
-                    # Fallback to random coordinates if API fails
-                    error_text = response.text
-                    logger.warning(f"❌ Geocoding API failed for {location_query} - Status: {response.status_code}, Response: {error_text}")
-                    latitude = round(random.uniform(-90, 90), 4)
-                    longitude = round(random.uniform(-180, 180), 4)
-                    country = 'Unknown Country'
-                    region = 'Unknown Region'
+                    # Try Nominatim (OpenStreetMap) as a fallback
+                    try:
+                        from urllib.parse import quote
+                        nominatim_url = f"https://nominatim.openstreetmap.org/search?q={quote(location_query)}&format=json&limit=1&addressdetails=1"
+                        headers = {"User-Agent": "DisastroScope/1.0 (contact: support@disastroscope.app)"}
+                        nomi_resp = requests.get(nominatim_url, headers=headers, timeout=12)
+                        if nomi_resp.status_code == 200 and isinstance(nomi_resp.json(), list) and len(nomi_resp.json()) > 0:
+                            result = nomi_resp.json()[0]
+                            latitude = float(result.get('lat'))
+                            longitude = float(result.get('lon'))
+                            address = result.get('address', {})
+                            country = address.get('country', 'Unknown Country')
+                            state = address.get('state') or address.get('region') or ''
+                            city = address.get('city') or address.get('town') or address.get('village') or address.get('county') or ''
+                            region = state if state else city if city else country
+                            logger.info(f"✅ Nominatim fallback geocoded {location_query} to {latitude}, {longitude} in {region}, {country}")
+                        else:
+                            error_text = getattr(nomi_resp, 'text', '')
+                            logger.warning(f"❌ Nominatim search failed for {location_query} - Status: {n omi_resp.status_code}, Response: {error_text}")
+                            # Final minimal fallback: keep coordinates unknown but don't crash
+                            latitude = round(random.uniform(-90, 90), 4)
+                            longitude = round(random.uniform(-180, 180), 4)
+                            country = 'Unknown Country'
+                            region = location_query
+                    except Exception as e2:
+                        logger.error(f"❌ Nominatim fallback error for {location_query}: {e2}")
+                        latitude = round(random.uniform(-90, 90), 4)
+                        longitude = round(random.uniform(-180, 180), 4)
+                        country = 'Unknown Country'
+                        region = location_query
                     
             except Exception as e:
                 # Fallback to predefined coordinates for common cities
@@ -1200,8 +1223,23 @@ def global_risk_analysis():
                         country = 'Unknown Country'
                         region = 'Unknown Region'
                 else:
-                    country = 'Unknown Country'
-                    region = 'Unknown Region'
+                    # Try Nominatim reverse as a fallback on HTTP failure
+                    headers = {"User-Agent": "DisastroScope/1.0 (contact: support@disastroscope.app)"}
+                    nomi_rev = requests.get(
+                        f"https://nominatim.openstreetmap.org/reverse?lat={latitude}&lon={longitude}&format=json&zoom=10&addressdetails=1",
+                        headers=headers,
+                        timeout=12,
+                    )
+                    if nomi_rev.status_code == 200:
+                        j = nomi_rev.json()
+                        address = j.get('address', {})
+                        country = address.get('country', 'Unknown Country')
+                        state = address.get('state') or address.get('region') or ''
+                        city = address.get('city') or address.get('town') or address.get('village') or address.get('county') or ''
+                        region = state if state else city if city else country
+                    else:
+                        country = 'Unknown Country'
+                        region = 'Unknown Region'
                     
             except Exception as e:
                 country = 'Unknown Country'
@@ -1470,25 +1508,30 @@ def global_risk_analysis():
             # Clamp risk score between 1% and 90% (more realistic)
             risk_score = max(0.01, min(0.90, risk_score))
             
-            # Determine risk level and color
+            # Determine risk level and color (semantic plus hex)
             if risk_score > 0.7:
                 risk_level = 'Critical'
-                color = '#ef4444'
+                color = 'red'
+                color_hex = '#ef4444'
             elif risk_score > 0.5:
                 risk_level = 'High'
-                color = '#f97316'
+                color = 'orange'
+                color_hex = '#f97316'
             elif risk_score > 0.3:
                 risk_level = 'Moderate'
-                color = '#eab308'
+                color = 'yellow'
+                color_hex = '#eab308'
             else:
                 risk_level = 'Low'
-                color = '#22c55e'
+                color = 'green'
+                color_hex = '#22c55e'
             
             # Generate detailed analysis
             risk_analysis['disasters'][disaster_type] = {
                 'risk_score': round(risk_score * 100, 1),
                 'risk_level': risk_level,
                 'color': color,
+                'color_hex': color_hex,
                 'probability': round(risk_score * 100, 1),
                 'severity': risk_level,
                 'factors': {
