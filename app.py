@@ -1284,86 +1284,79 @@ def global_risk_analysis():
             tropical_zones = abs(latitude) < 23.5
             temperate_zones = 23.5 <= abs(latitude) <= 66.5
             polar_zones = abs(latitude) > 66.5
-            
-            # Coastal proximity (affects floods, tsunamis, cyclones)
+
+            # Conservative coastal proximity: only mark true inside curated narrow coastal boxes
             coastal_proximity = False
-            # Major coastlines
-            coastlines = [
-                {'lat_range': (-60, 80), 'lng_range': (-180, -60)},  # Americas
-                {'lat_range': (-60, 80), 'lng_range': (-10, 50)},    # Europe/Africa
-                {'lat_range': (-60, 80), 'lng_range': (50, 180)},    # Asia/Australia
+            coastal_boxes = [
+                # West coasts of the Americas (Pacific)
+                {'lat': (-60, 60), 'lng': (-130, -70)},
+                # East Asia Pacific coasts
+                {'lat': (0, 60), 'lng': (120, 150)},
+                # Southeast Asia archipelago
+                {'lat': (-15, 15), 'lng': (95, 140)},
+                # Indian Ocean rim (India, Sri Lanka, Bangladesh, Myanmar)
+                {'lat': (5, 25), 'lng': (72, 98)},
+                # Australia coasts
+                {'lat': (-45, -10), 'lng': (110, 155)},
+                # Mediterranean coasts
+                {'lat': (30, 45), 'lng': (-10, 40)},
+                # Caribbean
+                {'lat': (5, 25), 'lng': (-90, -60)},
+                # East Africa coast
+                {'lat': (-35, 15), 'lng': (32, 50)}
             ]
-            
-            for coast in coastlines:
-                if (coast['lat_range'][0] <= latitude <= coast['lat_range'][1] and
-                    coast['lng_range'][0] <= longitude <= coast['lng_range'][1]):
+            for box in coastal_boxes:
+                if box['lat'][0] <= latitude <= box['lat'][1] and box['lng'][0] <= longitude <= box['lng'][1]:
                     coastal_proximity = True
                     break
             
             # Calculate REAL disaster-specific risks for ANY location worldwide
             if disaster_type == 'Earthquakes':
-                # Comprehensive tectonic plate analysis for any location
-                tectonic_risk = 0.05  # Base risk
-                
-                # Major tectonic plates with precise boundaries
-                plates = [
-                    # Pacific Plate
-                    {'lat_range': (-60, 60), 'lng_range': (120, -120), 'risk': 0.8, 'name': 'Pacific Ring of Fire'},
-                    # North American Plate
-                    {'lat_range': (15, 85), 'lng_range': (-180, -30), 'risk': 0.6, 'name': 'North American'},
-                    # Eurasian Plate
-                    {'lat_range': (20, 85), 'lng_range': (-20, 180), 'risk': 0.5, 'name': 'Eurasian'},
-                    # African Plate
-                    {'lat_range': (-40, 40), 'lng_range': (-20, 60), 'risk': 0.4, 'name': 'African'},
-                    # South American Plate
-                    {'lat_range': (-60, 15), 'lng_range': (-90, -30), 'risk': 0.5, 'name': 'South American'},
-                    # Indo-Australian Plate
-                    {'lat_range': (-60, 40), 'lng_range': (60, 180), 'risk': 0.7, 'name': 'Indo-Australian'},
-                    # Antarctic Plate
-                    {'lat_range': (-90, -60), 'lng_range': (-180, 180), 'risk': 0.2, 'name': 'Antarctic'}
+                # Conservative: high only near known active boundaries; elsewhere low
+                risk_score = 0.05
+                boundary_corridors = [
+                    # Japan/Kuril/Kamchatka
+                    {'lat': (30, 55), 'lng': (130, 165)},
+                    # Philippines/Indonesia arc
+                    {'lat': (-10, 20), 'lng': (95, 140)},
+                    # New Zealand
+                    {'lat': (-48, -30), 'lng': (165, 180)},
+                    # Chile/Peru trench
+                    {'lat': (-45, 10), 'lng': (-80, -68)},
+                    # California/Alaska
+                    {'lat': (30, 62), 'lng': (-128, -114)},
+                    {'lat': (54, 72), 'lng': (-170, -140)},
+                    # Himalayan belt
+                    {'lat': (25, 38), 'lng': (70, 98)},
+                    # Mid-Atlantic (reduced)
+                    {'lat': (-40, 40), 'lng': (-35, -15)}
                 ]
-                
-                # Check proximity to any tectonic plate boundary
-                for plate in plates:
-                    if (plate['lat_range'][0] <= latitude <= plate['lat_range'][1] and
-                        plate['lng_range'][0] <= longitude <= plate['lng_range'][1]):
-                        tectonic_risk = max(tectonic_risk, plate['risk'])
+                for c in boundary_corridors:
+                    if c['lat'][0] <= latitude <= c['lat'][1] and c['lng'][0] <= longitude <= c['lng'][1]:
+                        risk_score = 0.7
                         break
                 
-                # Additional risk factors for any location
-                # Distance from equator affects seismic activity
-                equatorial_factor = 1.0 - (abs(latitude) / 90.0) * 0.3
-                # Continental vs oceanic crust
-                continental_factor = 1.0 if abs(longitude) > 30 else 0.8
-                
-                risk_score = tectonic_risk * equatorial_factor * continental_factor
-                
             elif disaster_type == 'Tsunamis':
-                # Worldwide tsunami risk analysis
-                if coastal_proximity:
-                    # Pacific Ring of Fire (highest risk)
-                    pacific_ring = (abs(latitude) < 60 and 
-                                  ((120 <= longitude <= 180) or (-180 <= longitude <= -120)))
-                    
-                    # Indian Ocean (2004 tsunami region)
-                    indian_ocean = (abs(latitude) < 30 and 60 <= longitude <= 120)
-                    
-                    # Caribbean (Caribbean Plate boundary)
-                    caribbean = (10 <= latitude <= 25 and -90 <= longitude <= -60)
-                    
-                    # Mediterranean (African-Eurasian boundary)
-                    mediterranean = (30 <= latitude <= 45 and -10 <= longitude <= 40)
-                    
-                    if pacific_ring:
-                        risk_score = 0.8
-                    elif indian_ocean:
-                        risk_score = 0.7
-                    elif caribbean or mediterranean:
-                        risk_score = 0.5
-                    else:
-                        risk_score = 0.3
-                else:
-                    risk_score = 0.01  # Minimal risk inland
+                # Strict: only specific coastal corridors have non-trivial risk
+                risk_score = 0.01
+                tsunami_corridors = [
+                    # Japan/Kuril/Kamchatka coasts
+                    {'lat': (30, 55), 'lng': (132, 165), 'score': 0.8},
+                    # Indonesia arc
+                    {'lat': (-10, 10), 'lng': (95, 140), 'score': 0.7},
+                    # Chile/Peru coast
+                    {'lat': (-45, 10), 'lng': (-80, -68), 'score': 0.7},
+                    # Alaska/Aleutian
+                    {'lat': (50, 72), 'lng': (-180, -150), 'score': 0.7},
+                    # Indian Ocean rim
+                    {'lat': (5, 25), 'lng': (72, 98), 'score': 0.6},
+                    # Philippines
+                    {'lat': (5, 20), 'lng': (120, 127), 'score': 0.6}
+                ]
+                for c in tsunami_corridors:
+                    if c['lat'][0] <= latitude <= c['lat'][1] and c['lng'][0] <= longitude <= c['lng'][1]:
+                        risk_score = c['score']
+                        break
                     
             elif disaster_type == 'Cyclones':
                 # Worldwide cyclone risk for any location
