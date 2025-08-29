@@ -1134,7 +1134,7 @@ def global_risk_analysis():
                             logger.info(f"✅ Nominatim fallback geocoded {location_query} to {latitude}, {longitude} in {region}, {country}")
                         else:
                             error_text = getattr(nomi_resp, 'text', '')
-                            logger.warning(f"❌ Nominatim search failed for {location_query} - Status: {n omi_resp.status_code}, Response: {error_text}")
+                            logger.warning(f"❌ Nominatim search failed for {location_query} - Status: {nomi_resp.status_code}, Response: {error_text}")
                             # Final minimal fallback: keep coordinates unknown but don't crash
                             latitude = round(random.uniform(-90, 90), 4)
                             longitude = round(random.uniform(-180, 180), 4)
