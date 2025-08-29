@@ -521,7 +521,8 @@ def home():
             "ai_predict": "/api/ai/predict",
             "weather": "/api/weather/<city>",
             "events_near": "/api/events/near",
-            "predictions_near": "/api/predictions/near"
+            "predictions_near": "/api/predictions/near",
+            "global_risk_analysis": "/api/global-risk-analysis"
         }
     })
 
