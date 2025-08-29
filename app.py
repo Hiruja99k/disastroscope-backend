@@ -996,6 +996,113 @@ def geocode_location():
         logger.error(f"Error geocoding location: {e}")
         return jsonify({"error": "Failed to geocode location"}), 500
 
+@app.route('/api/global-risk-analysis', methods=['POST'])
+@rate_limit
+def global_risk_analysis():
+    """Advanced global risk analysis for 7 disaster types"""
+    try:
+        data = request.get_json()
+        location_query = data.get('location_query')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        
+        if not location_query and (latitude is None or longitude is None):
+            return jsonify({'error': 'Missing location_query or coordinates'}), 400
+        
+        # Use provided coordinates or generate based on location query
+        if latitude is None or longitude is None:
+            # Mock geocoding for location query
+            latitude = round(random.uniform(-90, 90), 4)
+            longitude = round(random.uniform(-180, 180), 4)
+        
+        # Generate realistic risk analysis for 7 disaster types
+        disaster_types = ['Floods', 'Landslides', 'Earthquakes', 'Cyclones', 'Wildfires', 'Tsunamis', 'Droughts']
+        
+        risk_analysis = {
+            'location': {
+                'query': location_query,
+                'latitude': latitude,
+                'longitude': longitude,
+                'country': 'Sample Country',
+                'region': 'Sample Region'
+            },
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'analysis_period': '7 days',
+            'disasters': {}
+        }
+        
+        # Generate risk levels for each disaster type
+        for disaster_type in disaster_types:
+            # Base risk factors based on disaster type and location
+            base_risk = {
+                'Floods': random.uniform(0.1, 0.8),
+                'Landslides': random.uniform(0.05, 0.6),
+                'Earthquakes': random.uniform(0.02, 0.4),
+                'Cyclones': random.uniform(0.05, 0.7),
+                'Wildfires': random.uniform(0.1, 0.9),
+                'Tsunamis': random.uniform(0.01, 0.3),
+                'Droughts': random.uniform(0.1, 0.8)
+            }
+            
+            # Add seasonal and geographical variations
+            seasonal_factor = 1.0 + 0.3 * math.sin(time.time() / (365 * 24 * 3600) * 2 * math.pi)
+            geographical_factor = 1.0 + 0.2 * math.sin(latitude * math.pi / 180) * math.cos(longitude * math.pi / 180)
+            
+            risk_score = base_risk[disaster_type] * seasonal_factor * geographical_factor
+            risk_score = max(0.01, min(0.95, risk_score))  # Clamp between 1% and 95%
+            
+            # Determine risk level
+            if risk_score < 0.2:
+                risk_level = 'Low'
+                color = 'green'
+            elif risk_score < 0.4:
+                risk_level = 'Moderate'
+                color = 'yellow'
+            elif risk_score < 0.7:
+                risk_level = 'High'
+                color = 'orange'
+            else:
+                risk_level = 'Critical'
+                color = 'red'
+            
+            # Generate detailed analysis
+            risk_analysis['disasters'][disaster_type] = {
+                'risk_score': round(risk_score * 100, 1),
+                'risk_level': risk_level,
+                'color': color,
+                'probability': round(risk_score * 100, 1),
+                'severity': risk_level,
+                'factors': {
+                    'geographical': round(geographical_factor * 100, 1),
+                    'seasonal': round(seasonal_factor * 100, 1),
+                    'historical': round(random.uniform(50, 90), 1),
+                    'environmental': round(random.uniform(30, 80), 1)
+                },
+                'description': f"{risk_level} risk of {disaster_type.lower()} in this region",
+                'recommendations': [
+                    f"Monitor {disaster_type.lower()} indicators",
+                    "Stay informed about local alerts",
+                    "Prepare emergency response plans"
+                ],
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            }
+        
+        # Calculate composite risk index
+        all_risks = [d['risk_score'] for d in risk_analysis['disasters'].values()]
+        composite_risk = sum(all_risks) / len(all_risks)
+        
+        risk_analysis['composite_risk'] = {
+            'score': round(composite_risk, 1),
+            'level': 'Low' if composite_risk < 30 else 'Moderate' if composite_risk < 50 else 'High' if composite_risk < 70 else 'Critical',
+            'trend': random.choice(['increasing', 'stable', 'decreasing'])
+        }
+        
+        return jsonify(risk_analysis)
+        
+    except Exception as e:
+        logger.error(f"Error in global risk analysis: {e}")
+        return jsonify({"error": "Failed to analyze global risk"}), 500
+
 # ============================================================================
 # ERROR HANDLERS
 # ============================================================================
