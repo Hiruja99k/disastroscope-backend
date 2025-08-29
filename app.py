@@ -971,30 +971,61 @@ def analyze_location_by_coords():
 @app.route('/api/geocode')
 @rate_limit
 def geocode_location():
-    """Geocode a location query"""
+    """Geocode a location query using OpenCage API"""
     try:
         query = request.args.get('query')
         limit = request.args.get('limit', 5, type=int)
         
         if not query:
             return jsonify({'error': 'Missing query parameter'}), 400
-            
-        # You can integrate with OpenCage, Google Maps, or other geocoding services
-        # For now, return mock data with rounded coordinates
-        geocode_results = [
-            {
-                'name': query,
-                'lat': round(random.uniform(-90, 90), 4),
-                'lon': round(random.uniform(-180, 180), 4),
-                'country': 'Sample Country',
-                'state': 'Sample State'
-            }
-        ]
         
-        return jsonify(geocode_results[:limit])
+        # Use OpenCage Geocoding API
+        try:
+            import requests
+            from urllib.parse import quote
+            
+            api_key = os.getenv('OPENCAGE_API_KEY', 'demo_key')
+            logger.info(f"Geocoding test - Using API key: {api_key[:8]}..." if api_key != 'demo_key' else "Using demo key")
+            
+            query_encoded = quote(query)
+            geocoding_url = f"https://api.opencagedata.com/geocode/v1/json?q={query_encoded}&key={api_key}&limit={limit}"
+            
+            response = requests.get(geocoding_url, timeout=10)
+            logger.info(f"Geocoding test response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('results'):
+                    geocode_results = []
+                    for result in data['results'][:limit]:
+                        geometry = result['geometry']
+                        components = result['components']
+                        
+                        geocode_results.append({
+                            'name': result.get('formatted', query),
+                            'lat': geometry['lat'],
+                            'lon': geometry['lng'],
+                            'country': components.get('country', 'Unknown'),
+                            'state': components.get('state', ''),
+                            'city': components.get('city', components.get('town', ''))
+                        })
+                    
+                    logger.info(f"✅ Geocoding test successful for '{query}': {len(geocode_results)} results")
+                    return jsonify(geocode_results)
+                else:
+                    logger.warning(f"❌ Geocoding test - no results for '{query}'")
+                    return jsonify({'error': 'No results found'}), 404
+            else:
+                error_text = response.text
+                logger.error(f"❌ Geocoding test failed for '{query}' - Status: {response.status_code}, Response: {error_text}")
+                return jsonify({'error': f'Geocoding API failed: {response.status_code}'}), 500
+                
+        except Exception as e:
+            logger.error(f"❌ Geocoding test exception for '{query}': {str(e)}")
+            return jsonify({'error': f'Geocoding error: {str(e)}'}), 500
         
     except Exception as e:
-        logger.error(f"Error geocoding location: {e}")
+        logger.error(f"Error in geocode endpoint: {e}")
         return jsonify({"error": "Failed to geocode location"}), 500
 
 @app.route('/api/global-risk-analysis', methods=['POST'])
@@ -1018,13 +1049,20 @@ def global_risk_analysis():
                 from urllib.parse import quote
                 
                 # Use OpenCage Geocoding API (free tier available)
-                api_key = os.getenv('OPENCAGE_API_KEY', 'demo_key')  # You can get a free key from opencagedata.com
+                api_key = os.getenv('OPENCAGE_API_KEY', 'demo_key')
+                logger.info(f"Using API key: {api_key[:8]}..." if api_key != 'demo_key' else "Using demo key")
+                
                 query = quote(location_query)
                 geocoding_url = f"https://api.opencagedata.com/geocode/v1/json?q={query}&key={api_key}&limit=1"
+                logger.info(f"Geocoding URL: {geocoding_url}")
                 
                 response = requests.get(geocoding_url, timeout=10)
+                logger.info(f"Geocoding response status: {response.status_code}")
+                
                 if response.status_code == 200:
                     data = response.json()
+                    logger.info(f"Geocoding response: {data}")
+                    
                     if data.get('results') and len(data['results']) > 0:
                         result = data['results'][0]
                         geometry = result['geometry']
@@ -1039,29 +1077,30 @@ def global_risk_analysis():
                         city = components.get('city', components.get('town', components.get('village', '')))
                         region = state if state else city if city else country
                         
-                        logger.info(f"Geocoded {location_query} to {latitude}, {longitude} in {region}, {country}")
+                        logger.info(f"✅ Successfully geocoded {location_query} to {latitude}, {longitude} in {region}, {country}")
                     else:
                         # Fallback to random coordinates if geocoding fails
                         latitude = round(random.uniform(-90, 90), 4)
                         longitude = round(random.uniform(-180, 180), 4)
                         country = 'Unknown Country'
                         region = 'Unknown Region'
-                        logger.warning(f"Geocoding failed for {location_query}, using fallback coordinates")
+                        logger.warning(f"❌ Geocoding failed for {location_query} - no results found, using fallback coordinates")
                 else:
                     # Fallback to random coordinates if API fails
+                    error_text = response.text
+                    logger.warning(f"❌ Geocoding API failed for {location_query} - Status: {response.status_code}, Response: {error_text}")
                     latitude = round(random.uniform(-90, 90), 4)
                     longitude = round(random.uniform(-180, 180), 4)
                     country = 'Unknown Country'
                     region = 'Unknown Region'
-                    logger.warning(f"Geocoding API failed for {location_query}, using fallback coordinates")
                     
             except Exception as e:
                 # Fallback to random coordinates if any error occurs
+                logger.error(f"❌ Geocoding exception for {location_query}: {str(e)}")
                 latitude = round(random.uniform(-90, 90), 4)
                 longitude = round(random.uniform(-180, 180), 4)
                 country = 'Unknown Country'
                 region = 'Unknown Region'
-                logger.error(f"Geocoding error for {location_query}: {e}")
         else:
             # If coordinates are provided, reverse geocode to get location info
             try:
