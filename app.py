@@ -63,6 +63,11 @@ def setup_logging():
 logger = setup_logging()
 _calibrator = Calibrator(os.path.join(os.path.dirname(__file__), 'calibration.pkl'))
 
+# Simple in-memory caches and job registry (process-local; stateless deploys will reset on restart)
+_context_cache: Dict[str, Dict[str, Any]] = {}
+_context_cache_ttl_seconds = int(os.getenv('CONTEXT_CACHE_TTL_SECONDS', '900'))  # 15 minutes
+_batch_jobs: Dict[str, Dict[str, Any]] = {}
+
 # Import Firebase and Tinybird services
 try:
     from firebase_service import firebase_service
@@ -702,6 +707,53 @@ def admin_train_enhanced_models():
         return jsonify({'error': 'Failed to start training'}), 500
 
 # ============================================================================
+# ADMIN: TRAIN CALIBRATION MODELS (Platt/Isotonic if sklearn available)
+# ============================================================================
+@app.route('/api/admin/train-calibration', methods=['POST'])
+@rate_limit
+def admin_train_calibration():
+    try:
+        if os.getenv('ADMIN_ENABLED', 'false').lower() != 'true':
+            return jsonify({'error': 'Admin disabled'}), 403
+        if not (ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized()):
+            return jsonify({'error': 'Tinybird not configured'}), 503
+        # Lightweight: export small held-out set and fit per-hazard mapping if sklearn available
+        from calibration import Calibrator, SKLEARN_AVAILABLE, np  # type: ignore
+        calib = Calibrator()
+        if not SKLEARN_AVAILABLE or np is None:
+            return jsonify({'warning': 'sklearn not available; using fallback calibrator'}), 200
+        df = enhanced_tinybird_service.export_training_data(None, 90)
+        # Expect columns: hazard, prob, label (0/1). If absent, return warning.
+        cols = set(getattr(df, 'columns', []))
+        if not {'hazard', 'prob', 'label'}.issubset(cols):
+            return jsonify({'warning': 'export lacks required columns; skipped'}), 200
+        try:
+            from sklearn.isotonic import IsotonicRegression
+            models = {}
+            for hz, grp in df.groupby('hazard'):
+                try:
+                    X = np.asarray(grp['prob'], dtype=float)
+                    y = np.asarray(grp['label'], dtype=int)
+                    if len(X) < 100:
+                        continue
+                    iso = IsotonicRegression(out_of_bounds='clip')
+                    iso.fit(X, y)
+                    models[str(hz)] = iso
+                except Exception:
+                    continue
+            import pickle
+            path = os.path.join(os.path.dirname(__file__), 'calibration.pkl')
+            with open(path, 'wb') as f:
+                pickle.dump(models, f)
+            return jsonify({'success': True, 'hazards': list(models.keys())})
+        except Exception as e:
+            logger.warning(f"Calibration training failed: {e}")
+            return jsonify({'error': 'Calibration training failed'}), 500
+    except Exception as e:
+        logger.error(f"Admin calibration error: {e}")
+        return jsonify({'error': 'Failed to train calibration'}), 500
+
+# ============================================================================
 # ANALYTICS: EXPORT TRAINING DATA FROM TINYBIRD (for offline retraining)
 # ============================================================================
 @app.route('/api/analytics/export-training')
@@ -720,6 +772,88 @@ def analytics_export_training():
     except Exception as e:
         logger.error(f"Export training data error: {e}")
         return jsonify({'error': 'Failed to export training data'}), 500
+
+# ============================================================================
+# CONTEXT CACHE: WEATHER + GEOSPATIAL ENRICHMENTS (TTL)
+# ============================================================================
+@app.route('/api/context')
+@rate_limit
+def get_context():
+    try:
+        lat = float(request.args.get('lat'))
+        lon = float(request.args.get('lon'))
+        key = f"{round(lat,3)}:{round(lon,3)}"
+        now = time.time()
+        item = _context_cache.get(key)
+        if item and (now - item.get('ts', 0)) < _context_cache_ttl_seconds:
+            return jsonify({'cached': True, 'data': item['data']})
+
+        # Build minimal context with existing helpers and Tinybird trends
+        geospatial = {
+            'elevation': _estimate_elevation(lat, lon),
+            'slope': _estimate_slope(lat, lon),
+            'aspect': _estimate_aspect(lat, lon),
+            'land_use': _estimate_land_use(lat, lon),
+            'distance_to_water': _estimate_distance_to_water(lat, lon),
+            'distance_to_fault': _estimate_distance_to_fault(lat, lon),
+        }
+        weather_trends = None
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            weather_trends = enhanced_tinybird_service.get_weather_trends((lat, lon), 24)
+
+        data = {'geospatial': geospatial, 'weather_trends': weather_trends}
+        _context_cache[key] = {'ts': now, 'data': data}
+        return jsonify({'cached': False, 'data': data})
+    except Exception as e:
+        logger.error(f"Context endpoint error: {e}")
+        return jsonify({'error': 'Failed to build context'}), 500
+
+# ============================================================================
+# ASYNC BATCH JOBS: SUBMIT + STATUS (in-memory registry)
+# ============================================================================
+@app.route('/api/ai/predict-batch/submit', methods=['POST'])
+@rate_limit
+def submit_batch_job():
+    try:
+        payload = request.get_json() or {}
+        items = payload.get('items') or []
+        if not isinstance(items, list) or not items:
+            return jsonify({'error': 'items[] required'}), 400
+        job_id = f"job-{int(time.time()*1000)}"
+        _batch_jobs[job_id] = {'status': 'queued', 'result': None}
+        import threading
+        def _run():
+            try:
+                _batch_jobs[job_id]['status'] = 'running'
+                # Reuse existing batch logic via local call
+                with app.test_request_context(json={'items': items}):
+                    resp = predict_disaster_risks_batch()
+                # flask Response or tuple; normalize
+                data = resp.get_json() if hasattr(resp, 'get_json') else resp[0]
+                _batch_jobs[job_id]['result'] = data
+                _batch_jobs[job_id]['status'] = 'done'
+            except Exception as e:
+                _batch_jobs[job_id]['status'] = 'error'
+                _batch_jobs[job_id]['result'] = {'error': str(e)}
+        threading.Thread(target=_run, name='BatchJob', daemon=True).start()
+        return jsonify({'job_id': job_id, 'status': 'queued'})
+    except Exception as e:
+        logger.error(f"Submit batch job error: {e}")
+        return jsonify({'error': 'Failed to submit job'}), 500
+
+
+@app.route('/api/ai/predict-batch/status')
+@rate_limit
+def get_batch_job_status():
+    try:
+        job_id = request.args.get('job_id')
+        job = _batch_jobs.get(job_id)
+        if not job:
+            return jsonify({'error': 'job not found'}), 404
+        return jsonify({'job_id': job_id, 'status': job['status'], 'result': job['result']})
+    except Exception as e:
+        logger.error(f"Batch job status error: {e}")
+        return jsonify({'error': 'Failed to get job status'}), 500
 
 # ============================================================================
 # HEALTH AND STATUS ENDPOINTS
@@ -1060,7 +1194,7 @@ def predict_disaster_risks():
                 logger.warning(f"Enhanced model prediction failed, falling back: {_e}")
                 predictions = prediction_engine.predict_all(pred_request)
         else:
-        predictions = prediction_engine.predict_all(pred_request)
+            predictions = prediction_engine.predict_all(pred_request)
         
         # Calibrated confidence via calibrator (falls back to bounded transform)
         confidences = {k: _calibrator.apply(k, float(v)) for k, v in predictions.items()}
@@ -2176,6 +2310,128 @@ def predict_enhanced_risks():
         return jsonify({'error': 'Failed to generate enhanced predictions'}), 500
 
 
+@app.route('/api/ai/predict-batch', methods=['POST'])
+@rate_limit
+def predict_disaster_risks_batch():
+    """Batch predictions for multiple locations to power heatmaps/lists."""
+    try:
+        payload = request.get_json() or {}
+        items = payload.get('items') or []
+        if not isinstance(items, list) or not items:
+            return jsonify({'error': 'items[] required'}), 400
+
+        results: List[Dict[str, Any]] = []
+        for item in items[:200]:  # safety cap
+            try:
+                lat = float(item.get('latitude'))
+                lon = float(item.get('longitude'))
+                temp = float(item.get('temperature', 20.0))
+                hum = float(item.get('humidity', 60.0))
+                pres = float(item.get('pressure', 1013.0))
+                wind = float(item.get('wind_speed', 5.0))
+                precip = float(item.get('precipitation', 2.0))
+                name = item.get('location_name', 'Unknown')
+
+                pred_request = PredictionRequest(
+                    latitude=lat,
+                    longitude=lon,
+                    temperature=temp,
+                    humidity=hum,
+                    pressure=pres,
+                    wind_speed=wind,
+                    precipitation=precip,
+                    location_name=name,
+                )
+
+                # Use same enhanced/personalized flow as single prediction
+                user_id = getattr(getattr(request, 'user', None), 'uid', '') if hasattr(request, 'user') else ''
+                if AI_MODEL_MANAGER_AVAILABLE and user_id:
+                    geospatial_data = {'latitude': lat, 'longitude': lon}
+                    weather_data = {
+                        'temperature': temp, 'humidity': hum, 'pressure': pres,
+                        'wind_speed': wind, 'precipitation': precip,
+                    }
+                    preds = ai_model_manager.get_personalized_prediction(user_id, weather_data, geospatial_data)
+                elif ENHANCED_AI_AVAILABLE:
+                    geospatial_data = {'latitude': lat, 'longitude': lon}
+                    weather_data = {
+                        'temperature': temp, 'humidity': hum, 'pressure': pres,
+                        'wind_speed': wind, 'precipitation': precip,
+                    }
+                    preds = enhanced_ai_prediction_service.predict_enhanced_risks(weather_data, geospatial_data)
+                else:
+                    preds = prediction_engine.predict_all(pred_request)
+
+                conf = {k: _calibrator.apply(k, float(v)) for k, v in preds.items()}
+                results.append({
+                    'location': {'latitude': lat, 'longitude': lon, 'name': name},
+                    'predictions': preds,
+                    'confidence': conf,
+                })
+            except Exception:
+                continue
+
+        return jsonify({'items': results, 'count': len(results)})
+    except Exception as e:
+        logger.error(f"Batch prediction error: {e}")
+        return jsonify({'error': 'Failed to process batch'}), 500
+
+
+# ============================================================================
+# DRIFT ANALYTICS (lightweight): compares recent Tinybird features vs baseline
+# ============================================================================
+@app.route('/api/analytics/drift')
+@rate_limit
+def analytics_drift():
+    try:
+        if not (ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized()):
+            return jsonify({'error': 'Tinybird not configured'}), 503
+        # Expect enhanced_tinybird_service to provide minimal metrics; otherwise return placeholder
+        try:
+            health = enhanced_tinybird_service.get_system_health_metrics()
+            return jsonify({'drift': health.get('feature_drift', {}), 'health': health})
+        except Exception:
+            return jsonify({'message': 'No drift metrics available'}), 200
+    except Exception as e:
+        logger.error(f"Drift analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch drift analytics'}), 500
+
+
+@app.route('/api/ai/feature-importance')
+@rate_limit
+def get_feature_importance():
+    """Expose model feature importances if available (no heavy SHAP dependency)."""
+    try:
+        if not ENHANCED_AI_AVAILABLE:
+            return jsonify({'error': 'Enhanced AI not available'}), 503
+
+        # Try to introspect enhanced models for importances/coefficients
+        out: Dict[str, Any] = {}
+        try:
+            models = getattr(enhanced_ai_prediction_service, 'models', {}) or {}
+            for hazard, model in models.items():
+                imp = None
+                # Common sklearn interfaces
+                if hasattr(model, 'feature_importances_'):
+                    vals = getattr(model, 'feature_importances_')
+                    imp = [float(x) for x in list(vals)[:32]]
+                elif hasattr(model, 'coef_'):
+                    vals = getattr(model, 'coef_')
+                    try:
+                        imp = [float(abs(x)) for x in list(vals[0])[:32]]
+                    except Exception:
+                        imp = [float(abs(x)) for x in list(vals)[:32]]
+                if imp is not None:
+                    out[hazard] = {'importance': imp}
+        except Exception:
+            pass
+
+        if not out:
+            return jsonify({'message': 'No feature importances available'}), 200
+        return jsonify(out)
+    except Exception as e:
+        logger.error(f"Feature importance error: {e}")
+        return jsonify({'error': 'Failed to get feature importances'}), 500
 @app.route('/api/analytics/model-performance')
 @rate_limit
 def analytics_model_performance():
@@ -2207,6 +2463,66 @@ def analytics_risk_trends():
     except Exception as e:
         logger.error(f"Risk trend analytics error: {e}")
         return jsonify({'error': 'Failed to fetch risk trends'}), 500
+
+
+@app.route('/api/analytics/weather-trends')
+@rate_limit
+def analytics_weather_trends():
+    try:
+        lat = float(request.args.get('lat'))
+        lon = float(request.args.get('lon'))
+        hours = int(request.args.get('hours', '24'))
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            trends = enhanced_tinybird_service.get_weather_trends((lat, lon), hours)
+            return jsonify({'location': {'lat': lat, 'lon': lon}, 'hours': hours, 'trends': trends})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"Weather trend analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch weather trends'}), 500
+
+
+@app.route('/api/analytics/user-behavior')
+@rate_limit
+def analytics_user_behavior():
+    try:
+        uid = request.args.get('uid') or ''
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            profile = enhanced_tinybird_service.get_user_behavior_profile(uid) if uid else None
+            agg = enhanced_tinybird_service.get_user_feedback_analytics(days=30)
+            return jsonify({'profile': profile, 'feedback_analytics': agg})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"User behavior analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch user behavior'}), 500
+
+
+@app.route('/api/analytics/community-perception')
+@rate_limit
+def analytics_community_perception():
+    try:
+        lat = float(request.args.get('lat'))
+        lon = float(request.args.get('lon'))
+        radius = float(request.args.get('radius_km', '10'))
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            data = enhanced_tinybird_service.get_community_risk_perception((lat, lon), radius)
+            return jsonify({'location': {'lat': lat, 'lon': lon}, 'radius_km': radius, 'perception': data})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"Community perception analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch community perception'}), 500
+
+
+@app.route('/api/analytics/system-health')
+@rate_limit
+def analytics_system_health():
+    try:
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            health = enhanced_tinybird_service.get_system_health_metrics()
+            return jsonify({'health': health})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"System health analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch system health'}), 500
 
 @app.route('/api/ai/feedback', methods=['POST'])
 @rate_limit
