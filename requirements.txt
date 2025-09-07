@@ -17,9 +17,9 @@ requests==2.31.0
 numpy==1.24.3
 pandas==2.0.3
 
-# Machine Learning Libraries (CPU-only, smaller versions)
+# Machine Learning Libraries (optimized versions)
 scikit-learn==1.3.0
-torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
+torch==2.0.1
 xgboost==1.7.6
 
 # Monitoring and Logging
