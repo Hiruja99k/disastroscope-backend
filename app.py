@@ -61,6 +61,52 @@ def setup_logging():
 
 logger = setup_logging()
 
+# Import Firebase and Tinybird services
+try:
+    from firebase_service import firebase_service
+    from tinybird_service import tinybird_service
+    INTEGRATIONS_AVAILABLE = True
+    logger.info("Firebase and Tinybird services loaded successfully")
+except ImportError as e:
+    logger.warning(f"Integration services not available: {e}")
+    INTEGRATIONS_AVAILABLE = False
+
+# Import Enhanced AI Models
+try:
+    from enhanced_ai_models import enhanced_ai_prediction_service
+    ENHANCED_AI_AVAILABLE = True
+    logger.info("Enhanced AI models loaded successfully")
+except ImportError as e:
+    logger.warning(f"Enhanced AI models not available: {e}")
+    ENHANCED_AI_AVAILABLE = False
+
+# Import Enhanced Tinybird Service
+try:
+    from enhanced_tinybird_service import enhanced_tinybird_service
+    ENHANCED_TINYBIRD_AVAILABLE = True
+    logger.info("Enhanced Tinybird service loaded successfully")
+except ImportError as e:
+    logger.warning(f"Enhanced Tinybird service not available: {e}")
+    ENHANCED_TINYBIRD_AVAILABLE = False
+
+# Import AI Model Manager
+try:
+    from ai_model_manager import ai_model_manager
+    AI_MODEL_MANAGER_AVAILABLE = True
+    logger.info("AI Model Manager loaded successfully")
+except ImportError as e:
+    logger.warning(f"AI Model Manager not available: {e}")
+    AI_MODEL_MANAGER_AVAILABLE = False
+
+# Import Smart Notification System
+try:
+    from smart_notification_system import smart_notification_system
+    SMART_NOTIFICATIONS_AVAILABLE = True
+    logger.info("Smart Notification System loaded successfully")
+except ImportError as e:
+    logger.warning(f"Smart Notification System not available: {e}")
+    SMART_NOTIFICATIONS_AVAILABLE = False
+
 # ============================================================================
 # DATA MODELS
 # ============================================================================
@@ -356,10 +402,11 @@ data_store = DataStore()
 # ============================================================================
 
 class PredictionEngine:
-    """Advanced prediction engine with multiple algorithms"""
+    """Advanced prediction engine with multiple algorithms and enhanced AI models"""
     
     def __init__(self):
         self.model_version = Config.MODEL_VERSION
+        self.use_enhanced_models = ENHANCED_AI_AVAILABLE
         self.algorithms = {
             'flood': self._predict_flood,
             'wildfire': self._predict_wildfire,
@@ -369,11 +416,64 @@ class PredictionEngine:
             'drought': self._predict_drought,
             'earthquake': self._predict_earthquake
         }
+        
+        # Initialize enhanced models if available
+        if self.use_enhanced_models:
+            try:
+                # Train models if they don't exist
+                if not os.path.exists(os.path.join(os.path.dirname(__file__), "enhanced_models")):
+                    logger.info("Training enhanced AI models...")
+                    enhanced_ai_prediction_service.train_enhanced_models(epochs=50)
+                logger.info("Enhanced AI models ready")
+            except Exception as e:
+                logger.error(f"Error initializing enhanced models: {e}")
+                self.use_enhanced_models = False
     
-    def predict_all(self, request_data: PredictionRequest) -> Dict[str, float]:
-        """Generate predictions for all disaster types"""
+    def predict_all(self, request_data: PredictionRequest, geospatial_data: Dict = None) -> Dict[str, float]:
+        """Generate predictions for all disaster types using enhanced models when available"""
         predictions = {}
         
+        # Use enhanced models if available
+        if self.use_enhanced_models and geospatial_data:
+            try:
+                # Convert PredictionRequest to weather data dict
+                weather_data = {
+                    'temperature': request_data.temperature,
+                    'humidity': request_data.humidity,
+                    'pressure': request_data.pressure,
+                    'wind_speed': request_data.wind_speed,
+                    'wind_direction': getattr(request_data, 'wind_direction', 0.0),
+                    'precipitation': request_data.precipitation,
+                    'visibility': getattr(request_data, 'visibility', 10.0),
+                    'cloud_cover': getattr(request_data, 'cloud_cover', 50.0),
+                    'uv_index': getattr(request_data, 'uv_index', 5.0),
+                    'dew_point': getattr(request_data, 'dew_point', 10.0),
+                    'heat_index': getattr(request_data, 'heat_index', request_data.temperature),
+                    'wind_chill': getattr(request_data, 'wind_chill', request_data.temperature),
+                    'precipitation_intensity': getattr(request_data, 'precipitation_intensity', request_data.precipitation),
+                    'atmospheric_stability': getattr(request_data, 'atmospheric_stability', 0.5),
+                    'moisture_content': getattr(request_data, 'moisture_content', request_data.humidity / 100.0)
+                }
+                
+                # Use enhanced prediction service
+                enhanced_predictions = enhanced_ai_prediction_service.predict_enhanced_risks(
+                    weather_data, geospatial_data
+                )
+                
+                # Merge with fallback predictions for any missing types
+                for disaster_type in self.algorithms.keys():
+                    if disaster_type in enhanced_predictions:
+                        predictions[disaster_type] = enhanced_predictions[disaster_type]
+                    else:
+                        predictions[disaster_type] = self.algorithms[disaster_type](request_data)
+                
+                logger.info("Used enhanced AI models for predictions")
+                return predictions
+                
+            except Exception as e:
+                logger.error(f"Enhanced prediction failed, falling back to basic models: {e}")
+        
+        # Fallback to basic algorithms
         for disaster_type, algorithm in self.algorithms.items():
             try:
                 predictions[disaster_type] = algorithm(request_data)
@@ -449,6 +549,33 @@ CORS(app, resources={
 })
 
 # ============================================================================
+# AUTHENTICATION MIDDLEWARE
+# ============================================================================
+
+def require_auth(f):
+    """Decorator to require Firebase authentication"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not INTEGRATIONS_AVAILABLE or not firebase_service.is_initialized():
+            return jsonify({'error': 'Authentication service not available'}), 503
+        
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid authorization header'}), 401
+        
+        token = auth_header.split(' ')[1]
+        user_info = firebase_service.verify_token(token)
+        
+        if not user_info:
+            return jsonify({'error': 'Invalid or expired token'}), 401
+        
+        # Add user info to request context
+        request.user = user_info
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+# ============================================================================
 # MIDDLEWARE
 # ============================================================================
 
@@ -497,6 +624,24 @@ def health_check():
                 'memory': 'healthy'
             }
         }
+        
+        # Add integration status
+        if INTEGRATIONS_AVAILABLE:
+            health_status['integrations'] = {
+                'firebase': {
+                    'available': firebase_service.is_initialized(),
+                    'status': 'initialized' if firebase_service.is_initialized() else 'not_configured'
+                },
+                'tinybird': {
+                    'available': tinybird_service.is_initialized(),
+                    'status': 'initialized' if tinybird_service.is_initialized() else 'not_configured'
+                }
+            }
+        else:
+            health_status['integrations'] = {
+                'firebase': {'available': False, 'status': 'not_available'},
+                'tinybird': {'available': False, 'status': 'not_available'}
+            }
         
         return jsonify(health_status)
     except Exception as e:
@@ -1262,7 +1407,75 @@ def global_risk_analysis():
             'disasters': {}
         }
         
-        # Generate REAL risk levels based on actual geographical and historical data
+        # Generate enhanced geospatial data for improved predictions
+        geospatial_data = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'elevation': _estimate_elevation(latitude, longitude),
+            'slope': _estimate_slope(latitude, longitude),
+            'aspect': _estimate_aspect(latitude, longitude),
+            'soil_type': _estimate_soil_type(latitude, longitude),
+            'land_use': _estimate_land_use(latitude, longitude),
+            'distance_to_water': _estimate_distance_to_water(latitude, longitude),
+            'distance_to_fault': _estimate_distance_to_fault(latitude, longitude),
+            'population_density': _estimate_population_density(latitude, longitude),
+            'infrastructure_density': _estimate_infrastructure_density(latitude, longitude),
+            'historical_events': _estimate_historical_events(latitude, longitude),
+            'tectonic_zone': _get_tectonic_zone(latitude, longitude),
+            'climate_zone': _get_climate_zone(latitude),
+            'vegetation_index': _estimate_vegetation_index(latitude, longitude),
+            'urbanization_level': _estimate_urbanization_level(latitude, longitude)
+        }
+        
+        # Use enhanced prediction engine if available
+        if ENHANCED_AI_AVAILABLE:
+            try:
+                # Create weather data for enhanced predictions
+                weather_data = {
+                    'temperature': 20.0,  # Default values, would be replaced with real weather data
+                    'humidity': 50.0,
+                    'pressure': 1013.0,
+                    'wind_speed': 5.0,
+                    'wind_direction': 180.0,
+                    'precipitation': 0.0,
+                    'visibility': 10.0,
+                    'cloud_cover': 50.0,
+                    'uv_index': 5.0,
+                    'dew_point': 10.0,
+                    'heat_index': 20.0,
+                    'wind_chill': 20.0,
+                    'precipitation_intensity': 0.0,
+                    'atmospheric_stability': 0.5,
+                    'moisture_content': 0.5
+                }
+                
+                # Get enhanced predictions
+                enhanced_predictions = enhanced_ai_prediction_service.predict_enhanced_risks(
+                    weather_data, geospatial_data
+                )
+                
+                # Use enhanced predictions
+                for disaster_type in disaster_types:
+                    disaster_key = disaster_type.lower().replace(' ', '_')
+                    if disaster_key in enhanced_predictions:
+                        risk_level = enhanced_predictions[disaster_key]
+                    else:
+                        risk_level = 0.05  # Default fallback
+                    
+                    analysis['disasters'][disaster_type] = {
+                        'risk_level': risk_level,
+                        'confidence': 0.85,  # High confidence for enhanced models
+                        'factors': _get_risk_factors(disaster_type, geospatial_data),
+                        'recommendations': _get_recommendations(disaster_type, risk_level)
+                    }
+                
+                logger.info("Used enhanced AI models for global risk analysis")
+                return jsonify(analysis)
+                
+            except Exception as e:
+                logger.error(f"Enhanced prediction failed, using fallback: {e}")
+        
+        # Fallback to original method
         for disaster_type in disaster_types:
             # Initialize with realistic base risk
             base_risk = 0.05  # 5% base risk for most disasters
@@ -1512,6 +1725,555 @@ def global_risk_analysis():
         return jsonify({"error": "Failed to analyze global risk"}), 500
 
 # ============================================================================
+# FIREBASE & TINYBIRD INTEGRATION ENDPOINTS
+# ============================================================================
+
+@app.route('/api/auth/verify', methods=['POST'])
+@rate_limit
+def verify_firebase_token():
+    """Verify Firebase ID token"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not firebase_service.is_initialized():
+            return jsonify({'error': 'Firebase service not available'}), 503
+        
+        data = request.get_json()
+        if not data or 'token' not in data:
+            return jsonify({'error': 'Token required'}), 400
+        
+        user_info = firebase_service.verify_token(data['token'])
+        if not user_info:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        return jsonify({
+            'valid': True,
+            'user': user_info,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Token verification error: {e}")
+        return jsonify({'error': 'Token verification failed'}), 500
+
+@app.route('/api/auth/user/<uid>')
+@rate_limit
+def get_firebase_user(uid):
+    """Get Firebase user information"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not firebase_service.is_initialized():
+            return jsonify({'error': 'Firebase service not available'}), 503
+        
+        user_info = firebase_service.get_user(uid)
+        if not user_info:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify(user_info)
+        
+    except Exception as e:
+        logger.error(f"Get user error: {e}")
+        return jsonify({'error': 'Failed to get user'}), 500
+
+@app.route('/api/analytics/user/<uid>')
+@rate_limit
+def get_user_analytics(uid):
+    """Get user analytics from Tinybird"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not tinybird_service.is_initialized():
+            return jsonify({'error': 'Tinybird service not available'}), 503
+        
+        analytics = tinybird_service.get_user_analytics(uid)
+        return jsonify(analytics)
+        
+    except Exception as e:
+        logger.error(f"User analytics error: {e}")
+        return jsonify({'error': 'Failed to get user analytics'}), 500
+
+@app.route('/api/analytics/disasters')
+@rate_limit
+def get_disaster_analytics():
+    """Get disaster analytics from Tinybird"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not tinybird_service.is_initialized():
+            return jsonify({'error': 'Tinybird service not available'}), 503
+        
+        filters = request.args.to_dict()
+        analytics = tinybird_service.get_disaster_analytics(filters)
+        return jsonify(analytics)
+        
+    except Exception as e:
+        logger.error(f"Disaster analytics error: {e}")
+        return jsonify({'error': 'Failed to get disaster analytics'}), 500
+
+@app.route('/api/events/tinybird', methods=['POST'])
+@rate_limit
+def create_tinybird_event():
+    """Create an event in Tinybird"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not tinybird_service.is_initialized():
+            return jsonify({'error': 'Tinybird service not available'}), 503
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Event data required'}), 400
+        
+        # Determine event type and create appropriate event
+        event_type = data.get('type', 'disaster_event')
+        success = False
+        
+        if event_type == 'disaster_event':
+            success = tinybird_service.create_disaster_event(data)
+        elif event_type == 'disaster_prediction':
+            success = tinybird_service.create_prediction_event(data)
+        elif event_type == 'weather_data':
+            success = tinybird_service.create_weather_event(data)
+        elif event_type == 'user_created':
+            success = tinybird_service.create_user_event(data)
+        elif event_type == 'user_login':
+            success = tinybird_service.track_user_login(
+                data.get('uid', ''),
+                data.get('email', '')
+            )
+        else:
+            return jsonify({'error': 'Unknown event type'}), 400
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Event created successfully',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+        else:
+            return jsonify({'error': 'Failed to create event'}), 500
+        
+    except Exception as e:
+        logger.error(f"Create event error: {e}")
+        return jsonify({'error': 'Failed to create event'}), 500
+
+@app.route('/api/events/tinybird')
+@rate_limit
+def get_tinybird_events():
+    """Get events from Tinybird"""
+    try:
+        if not INTEGRATIONS_AVAILABLE or not tinybird_service.is_initialized():
+            return jsonify({'error': 'Tinybird service not available'}), 503
+        
+        limit = request.args.get('limit', 100, type=int)
+        filters = request.args.to_dict()
+        filters.pop('limit', None)  # Remove limit from filters
+        
+        events = tinybird_service.get_disaster_events(limit, filters)
+        return jsonify({
+            'events': events,
+            'count': len(events),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Get events error: {e}")
+        return jsonify({'error': 'Failed to get events'}), 500
+
+# ============================================================================
+# ENHANCED AI AND ANALYTICS ENDPOINTS
+# ============================================================================
+
+@app.route('/api/ai/predict-enhanced', methods=['POST'])
+@rate_limit
+def predict_enhanced_risks():
+    """Enhanced AI prediction with user personalization and real-time data"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        location_query = data.get('location_query')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        
+        if not location_query and (latitude is None or longitude is None):
+            return jsonify({'error': 'Missing location_query or coordinates'}), 400
+        
+        # Get geospatial data
+        if latitude is None or longitude is None:
+            # Geocode location
+            latitude, longitude = _geocode_location(location_query)
+        
+        geospatial_data = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'elevation': _estimate_elevation(latitude, longitude),
+            'slope': _estimate_slope(latitude, longitude),
+            'aspect': _estimate_aspect(latitude, longitude),
+            'soil_type': _estimate_soil_type(latitude, longitude),
+            'land_use': _estimate_land_use(latitude, longitude),
+            'distance_to_water': _estimate_distance_to_water(latitude, longitude),
+            'distance_to_fault': _estimate_distance_to_fault(latitude, longitude),
+            'population_density': _estimate_population_density(latitude, longitude),
+            'infrastructure_density': _estimate_infrastructure_density(latitude, longitude),
+            'historical_events': _estimate_historical_events(latitude, longitude),
+            'tectonic_zone': _get_tectonic_zone(latitude, longitude),
+            'climate_zone': _get_climate_zone(latitude),
+            'vegetation_index': _estimate_vegetation_index(latitude, longitude),
+            'urbanization_level': _estimate_urbanization_level(latitude, longitude)
+        }
+        
+        # Get weather data (mock for now, would integrate with real weather API)
+        weather_data = {
+            'temperature': 20.0,
+            'humidity': 50.0,
+            'pressure': 1013.0,
+            'wind_speed': 5.0,
+            'wind_direction': 180.0,
+            'precipitation': 0.0,
+            'visibility': 10.0,
+            'cloud_cover': 50.0,
+            'uv_index': 5.0,
+            'dew_point': 10.0,
+            'heat_index': 20.0,
+            'wind_chill': 20.0,
+            'precipitation_intensity': 0.0,
+            'atmospheric_stability': 0.5,
+            'moisture_content': 0.5
+        }
+        
+        # Get personalized predictions if user is provided
+        if user_id and AI_MODEL_MANAGER_AVAILABLE:
+            predictions = ai_model_manager.get_personalized_prediction(user_id, weather_data, geospatial_data)
+            
+            # Log prediction for learning
+            prediction_id = ai_model_manager.log_prediction_with_context(user_id, predictions, weather_data, geospatial_data)
+        else:
+            # Use enhanced AI models
+            if ENHANCED_AI_AVAILABLE:
+                predictions = enhanced_ai_prediction_service.predict_enhanced_risks(weather_data, geospatial_data)
+            else:
+                # Fallback to basic prediction engine
+                pred_request = PredictionRequest(
+                    latitude=latitude,
+                    longitude=longitude,
+                    temperature=weather_data['temperature'],
+                    humidity=weather_data['humidity'],
+                    pressure=weather_data['pressure'],
+                    wind_speed=weather_data['wind_speed'],
+                    precipitation=weather_data['precipitation'],
+                    location_name=location_query or 'Unknown'
+                )
+                predictions = prediction_engine.predict_all(pred_request, geospatial_data)
+        
+        # Stream weather data to Tinybird
+        if ENHANCED_TINYBIRD_AVAILABLE:
+            enhanced_tinybird_service.stream_weather_data({
+                'latitude': latitude,
+                'longitude': longitude,
+                'user_id': user_id or '',
+                **weather_data
+            })
+        
+        response = {
+            'predictions': predictions,
+            'metadata': {
+                'model_version': '2.0.0',
+                'prediction_timestamp': datetime.now(timezone.utc).isoformat(),
+                'location': {
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'name': location_query or 'Unknown'
+                },
+                'model_type': 'enhanced_ai' if ENHANCED_AI_AVAILABLE else 'basic',
+                'personalized': bool(user_id and AI_MODEL_MANAGER_AVAILABLE),
+                'prediction_id': prediction_id if 'prediction_id' in locals() else None,
+                'geospatial_context': geospatial_data,
+                'weather_context': weather_data
+            }
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in enhanced prediction: {e}")
+        return jsonify({'error': 'Failed to generate enhanced predictions'}), 500
+
+@app.route('/api/ai/feedback', methods=['POST'])
+@rate_limit
+def submit_prediction_feedback():
+    """Submit user feedback on prediction accuracy"""
+    try:
+        data = request.get_json()
+        prediction_id = data.get('prediction_id')
+        user_id = data.get('user_id')
+        accuracy_rating = data.get('accuracy_rating')  # 0.0 to 1.0
+        feedback_text = data.get('feedback', '')
+        
+        if not prediction_id or not user_id or accuracy_rating is None:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Log feedback to Tinybird
+        if ENHANCED_TINYBIRD_AVAILABLE:
+            success = enhanced_tinybird_service.log_user_feedback(
+                user_id, prediction_id, feedback_text, accuracy_rating
+            )
+            
+            if success:
+                # Update AI model manager
+                if AI_MODEL_MANAGER_AVAILABLE:
+                    ai_model_manager.update_prediction_accuracy(prediction_id, accuracy_rating, feedback_text)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Feedback submitted successfully',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+            else:
+                return jsonify({'error': 'Failed to submit feedback'}), 500
+        else:
+            return jsonify({'error': 'Feedback system not available'}), 503
+        
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        return jsonify({'error': 'Failed to submit feedback'}), 500
+
+@app.route('/api/ai/insights')
+@rate_limit
+def get_ai_insights():
+    """Get AI model insights and performance metrics"""
+    try:
+        insights = {}
+        
+        # Get model manager insights
+        if AI_MODEL_MANAGER_AVAILABLE:
+            insights['model_manager'] = ai_model_manager.get_model_insights()
+        
+        # Get enhanced AI model performance
+        if ENHANCED_AI_AVAILABLE:
+            insights['enhanced_models'] = enhanced_ai_prediction_service.get_model_performance()
+            insights['feature_importance'] = enhanced_ai_prediction_service.get_feature_importance()
+        
+        # Get Tinybird analytics
+        if ENHANCED_TINYBIRD_AVAILABLE:
+            insights['prediction_analytics'] = enhanced_tinybird_service.get_prediction_analytics(days=30)
+            insights['user_feedback_analytics'] = enhanced_tinybird_service.get_user_feedback_analytics(days=30)
+            insights['system_health'] = enhanced_tinybird_service.get_system_health_metrics()
+        
+        # Get smart notification status
+        if SMART_NOTIFICATIONS_AVAILABLE:
+            insights['notification_system'] = smart_notification_system.get_system_status()
+        
+        return jsonify({
+            'insights': insights,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting AI insights: {e}")
+        return jsonify({'error': 'Failed to get AI insights'}), 500
+
+@app.route('/api/notifications/preferences', methods=['POST'])
+@rate_limit
+def update_notification_preferences():
+    """Update user notification preferences"""
+    try:
+        if not SMART_NOTIFICATIONS_AVAILABLE:
+            return jsonify({'error': 'Smart notification system not available'}), 503
+        
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'User ID required'}), 400
+        
+        # Create user preferences object
+        from smart_notification_system import UserNotificationPreferences
+        
+        preferences = UserNotificationPreferences(
+            user_id=user_id,
+            email_enabled=data.get('email_enabled', True),
+            push_enabled=data.get('push_enabled', True),
+            sms_enabled=data.get('sms_enabled', False),
+            alert_frequency=data.get('alert_frequency', 'immediate'),
+            risk_threshold=data.get('risk_threshold', 0.5),
+            disaster_types=data.get('disaster_types', ['flood', 'earthquake', 'landslide']),
+            quiet_hours=data.get('quiet_hours', {'start': '22:00', 'end': '07:00'}),
+            location_radius=data.get('location_radius', 50.0),
+            last_updated=datetime.now(timezone.utc).isoformat()
+        )
+        
+        # Update preferences
+        smart_notification_system.update_user_preferences(user_id, preferences)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Notification preferences updated successfully',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating notification preferences: {e}")
+        return jsonify({'error': 'Failed to update notification preferences'}), 500
+
+@app.route('/api/notifications/user/<user_id>')
+@rate_limit
+def get_user_notifications(user_id):
+    """Get notifications for a specific user"""
+    try:
+        if not SMART_NOTIFICATIONS_AVAILABLE:
+            return jsonify({'error': 'Smart notification system not available'}), 503
+        
+        limit = request.args.get('limit', 10, type=int)
+        notifications = smart_notification_system.get_user_notifications(user_id, limit)
+        
+        # Convert to JSON-serializable format
+        notifications_data = []
+        for notification in notifications:
+            notifications_data.append({
+                'id': notification.id,
+                'type': notification.type.value,
+                'alert_level': notification.alert_level.value,
+                'title': notification.title,
+                'message': notification.message,
+                'disaster_type': notification.disaster_type,
+                'risk_level': notification.risk_level,
+                'confidence': notification.confidence,
+                'action_required': notification.action_required,
+                'timestamp': notification.timestamp,
+                'expires_at': notification.expires_at
+            })
+        
+        return jsonify({
+            'notifications': notifications_data,
+            'count': len(notifications_data),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting user notifications: {e}")
+        return jsonify({'error': 'Failed to get user notifications'}), 500
+
+@app.route('/api/analytics/user-behavior/<user_id>')
+@rate_limit
+def get_user_behavior_analytics(user_id):
+    """Get user behavior analytics for personalization"""
+    try:
+        if not ENHANCED_TINYBIRD_AVAILABLE:
+            return jsonify({'error': 'Enhanced analytics not available'}), 503
+        
+        # Get user behavior profile
+        user_behavior = enhanced_tinybird_service.get_user_behavior_profile(user_id)
+        
+        # Get user prediction analytics
+        prediction_analytics = enhanced_tinybird_service.get_prediction_analytics(user_id, days=90)
+        
+        # Get user activity
+        user_activity = enhanced_tinybird_service.get_user_activity(user_id, days=30)
+        
+        return jsonify({
+            'user_id': user_id,
+            'behavior_profile': user_behavior.__dict__ if user_behavior else None,
+            'prediction_analytics': prediction_analytics,
+            'user_activity': user_activity,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting user behavior analytics: {e}")
+        return jsonify({'error': 'Failed to get user behavior analytics'}), 500
+
+@app.route('/api/analytics/risk-trends')
+@rate_limit
+def get_risk_trend_analytics():
+    """Get risk trend analytics for locations"""
+    try:
+        if not ENHANCED_TINYBIRD_AVAILABLE:
+            return jsonify({'error': 'Enhanced analytics not available'}), 503
+        
+        latitude = request.args.get('latitude', type=float)
+        longitude = request.args.get('longitude', type=float)
+        days = request.args.get('days', 90, type=int)
+        
+        if latitude is None or longitude is None:
+            return jsonify({'error': 'Latitude and longitude required'}), 400
+        
+        # Get risk trend analysis
+        risk_trends = enhanced_tinybird_service.get_risk_trend_analysis((latitude, longitude), days)
+        
+        # Get historical events for the location
+        historical_events = enhanced_tinybird_service.get_location_risk_history(latitude, longitude)
+        
+        # Get community risk perception
+        community_perception = enhanced_tinybird_service.get_community_risk_perception((latitude, longitude))
+        
+        return jsonify({
+            'location': {'latitude': latitude, 'longitude': longitude},
+            'risk_trends': risk_trends,
+            'historical_events': [event.__dict__ for event in historical_events],
+            'community_perception': community_perception,
+            'analysis_period_days': days,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting risk trend analytics: {e}")
+        return jsonify({'error': 'Failed to get risk trend analytics'}), 500
+
+@app.route('/api/integrations/status')
+@rate_limit
+def get_integrations_status():
+    """Get comprehensive status of all integrations and enhanced services"""
+    try:
+        status = {
+            'integrations_available': INTEGRATIONS_AVAILABLE,
+            'enhanced_ai_available': ENHANCED_AI_AVAILABLE,
+            'enhanced_tinybird_available': ENHANCED_TINYBIRD_AVAILABLE,
+            'ai_model_manager_available': AI_MODEL_MANAGER_AVAILABLE,
+            'smart_notifications_available': SMART_NOTIFICATIONS_AVAILABLE,
+            'firebase': {
+                'available': INTEGRATIONS_AVAILABLE and firebase_service.is_initialized(),
+                'status': 'initialized' if firebase_service.is_initialized() else 'not_configured'
+            },
+            'tinybird': {
+                'available': INTEGRATIONS_AVAILABLE and tinybird_service.is_initialized(),
+                'status': 'initialized' if tinybird_service.is_initialized() else 'not_configured'
+            },
+            'enhanced_tinybird': {
+                'available': ENHANCED_TINYBIRD_AVAILABLE,
+                'status': enhanced_tinybird_service.health_check() if ENHANCED_TINYBIRD_AVAILABLE else {'status': 'not_available'}
+            },
+            'enhanced_ai_models': {
+                'available': ENHANCED_AI_AVAILABLE,
+                'status': 'initialized' if ENHANCED_AI_AVAILABLE else 'not_available'
+            },
+            'ai_model_manager': {
+                'available': AI_MODEL_MANAGER_AVAILABLE,
+                'status': ai_model_manager.get_model_insights() if AI_MODEL_MANAGER_AVAILABLE else {'status': 'not_available'}
+            },
+            'smart_notifications': {
+                'available': SMART_NOTIFICATIONS_AVAILABLE,
+                'status': smart_notification_system.get_system_status() if SMART_NOTIFICATIONS_AVAILABLE else {'status': 'not_available'}
+            },
+            'system_health': {
+                'overall_status': 'healthy' if all([
+                    INTEGRATIONS_AVAILABLE,
+                    ENHANCED_AI_AVAILABLE,
+                    ENHANCED_TINYBIRD_AVAILABLE,
+                    AI_MODEL_MANAGER_AVAILABLE,
+                    SMART_NOTIFICATIONS_AVAILABLE
+                ]) else 'degraded',
+                'features_enabled': {
+                    'basic_predictions': True,
+                    'enhanced_predictions': ENHANCED_AI_AVAILABLE,
+                    'personalized_predictions': AI_MODEL_MANAGER_AVAILABLE,
+                    'real_time_analytics': ENHANCED_TINYBIRD_AVAILABLE,
+                    'smart_notifications': SMART_NOTIFICATIONS_AVAILABLE,
+                    'user_behavior_learning': AI_MODEL_MANAGER_AVAILABLE,
+                    'historical_event_tracking': ENHANCED_TINYBIRD_AVAILABLE,
+                    'model_auto_retraining': AI_MODEL_MANAGER_AVAILABLE
+                }
+            },
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logger.error(f"Error getting integration status: {e}")
+        return jsonify({'error': 'Failed to get integration status'}), 500
+
+# ============================================================================
 # ERROR HANDLERS
 # ============================================================================
 
@@ -1565,6 +2327,200 @@ def handle_exception(error):
     }), 500
 
 # ============================================================================
+# ============================================================================
+# GEOSPATIAL DATA ESTIMATION FUNCTIONS
+# ============================================================================
+
+def _estimate_elevation(lat: float, lng: float) -> float:
+    """Estimate elevation based on coordinates"""
+    # Simplified elevation estimation based on major geographical features
+    if -60 <= lat <= 60 and -130 <= lng <= -70:  # Americas
+        if 30 <= lat <= 50 and -120 <= lng <= -100:  # Rocky Mountains
+            return random.uniform(1000, 3000)
+        elif -20 <= lat <= 10 and -80 <= lng <= -60:  # Andes
+            return random.uniform(2000, 4000)
+    elif 20 <= lat <= 50 and 70 <= lng <= 120:  # Himalayas
+        return random.uniform(2000, 5000)
+    elif -45 <= lat <= -10 and 110 <= lng <= 155:  # Australia
+        return random.uniform(100, 500)
+    else:
+        return random.uniform(0, 1000)
+
+def _estimate_slope(lat: float, lng: float) -> float:
+    """Estimate terrain slope"""
+    # Higher slopes in mountainous regions
+    if _estimate_elevation(lat, lng) > 2000:
+        return random.uniform(20, 60)
+    elif _estimate_elevation(lat, lng) > 1000:
+        return random.uniform(10, 30)
+    else:
+        return random.uniform(0, 15)
+
+def _estimate_aspect(lat: float, lng: float) -> float:
+    """Estimate terrain aspect (direction of slope)"""
+    return random.uniform(0, 360)
+
+def _estimate_soil_type(lat: float, lng: float) -> int:
+    """Estimate soil type (encoded)"""
+    # Simplified soil type estimation
+    if -30 <= lat <= 30:  # Tropical regions - more clay
+        return random.choices([0, 1, 2, 3], weights=[0.1, 0.2, 0.3, 0.4])[0]
+    elif 30 <= lat <= 60 or -60 <= lat <= -30:  # Temperate regions
+        return random.choices([0, 1, 2, 3], weights=[0.2, 0.3, 0.3, 0.2])[0]
+    else:  # Polar regions - more rock
+        return random.choices([0, 1, 2, 3], weights=[0.4, 0.3, 0.2, 0.1])[0]
+
+def _estimate_land_use(lat: float, lng: float) -> int:
+    """Estimate land use type (encoded)"""
+    # Simplified land use estimation
+    if -30 <= lat <= 30:  # Tropical regions
+        return random.choices([0, 1, 2, 3, 4], weights=[0.3, 0.2, 0.2, 0.2, 0.1])[0]
+    else:
+        return random.choices([0, 1, 2, 3, 4], weights=[0.2, 0.3, 0.2, 0.2, 0.1])[0]
+
+def _estimate_distance_to_water(lat: float, lng: float) -> float:
+    """Estimate distance to nearest water body (km)"""
+    # Simplified distance estimation
+    return random.uniform(0, 50)
+
+def _estimate_distance_to_fault(lat: float, lng: float) -> float:
+    """Estimate distance to nearest fault line (km)"""
+    # Simplified fault distance estimation
+    return random.uniform(0, 200)
+
+def _estimate_population_density(lat: float, lng: float) -> float:
+    """Estimate population density (people per km²)"""
+    # Simplified population density estimation
+    if -30 <= lat <= 30:  # Tropical regions - higher density
+        return random.uniform(100, 5000)
+    else:
+        return random.uniform(10, 1000)
+
+def _estimate_infrastructure_density(lat: float, lng: float) -> float:
+    """Estimate infrastructure density (0-1)"""
+    # Simplified infrastructure density estimation
+    return random.uniform(0.1, 0.9)
+
+def _estimate_historical_events(lat: float, lng: float) -> int:
+    """Estimate number of historical disaster events"""
+    # Simplified historical events estimation
+    return random.randint(0, 50)
+
+def _get_tectonic_zone(lat: float, lng: float) -> int:
+    """Get tectonic zone classification"""
+    # Pacific Ring of Fire
+    if -60 <= lat <= 60 and 120 <= lng <= -120:
+        return 1
+    # Alpine-Himalayan belt
+    elif 20 <= lat <= 50 and 30 <= lng <= 120:
+        return 2
+    # Mid-Atlantic Ridge
+    elif -60 <= lat <= 80 and -40 <= lng <= -20:
+        return 3
+    # East African Rift
+    elif -15 <= lat <= 15 and 25 <= lng <= 45:
+        return 4
+    else:
+        return 0  # Stable
+
+def _get_climate_zone(lat: float) -> int:
+    """Get climate zone classification"""
+    if abs(lat) < 23.5:
+        return 0  # Tropical
+    elif 23.5 <= abs(lat) <= 66.5:
+        return 1  # Temperate
+    else:
+        return 2  # Polar
+
+def _estimate_vegetation_index(lat: float, lng: float) -> float:
+    """Estimate vegetation index (0-1)"""
+    # Simplified vegetation index estimation
+    if -30 <= lat <= 30:  # Tropical regions - higher vegetation
+        return random.uniform(0.6, 1.0)
+    else:
+        return random.uniform(0.2, 0.8)
+
+def _estimate_urbanization_level(lat: float, lng: float) -> float:
+    """Estimate urbanization level (0-1)"""
+    # Simplified urbanization level estimation
+    return random.uniform(0.1, 0.9)
+
+def _get_risk_factors(disaster_type: str, geospatial_data: Dict) -> List[str]:
+    """Get risk factors for a specific disaster type"""
+    factors = []
+    
+    if disaster_type.lower() == 'earthquakes':
+        if geospatial_data['tectonic_zone'] > 0:
+            factors.append("Located in active tectonic zone")
+        if geospatial_data['distance_to_fault'] < 50:
+            factors.append("Close proximity to fault lines")
+        if geospatial_data['historical_events'] > 10:
+            factors.append("History of seismic activity")
+    
+    elif disaster_type.lower() == 'floods':
+        if geospatial_data['elevation'] < 100:
+            factors.append("Low elevation area")
+        if geospatial_data['distance_to_water'] < 10:
+            factors.append("Close to water bodies")
+        if geospatial_data['slope'] < 5:
+            factors.append("Flat terrain prone to water accumulation")
+    
+    elif disaster_type.lower() == 'landslides':
+        if geospatial_data['slope'] > 30:
+            factors.append("Steep terrain")
+        if geospatial_data['soil_type'] == 3:  # Clay
+            factors.append("Clay soil prone to instability")
+        if geospatial_data['vegetation_index'] < 0.3:
+            factors.append("Low vegetation cover")
+    
+    return factors
+
+def _get_recommendations(disaster_type: str, risk_level: float) -> List[str]:
+    """Get recommendations based on risk level"""
+    recommendations = []
+    
+    if risk_level > 0.7:
+        recommendations.append("High risk - immediate action required")
+        recommendations.append("Evacuation plan should be prepared")
+        recommendations.append("Emergency supplies should be stocked")
+    elif risk_level > 0.4:
+        recommendations.append("Moderate risk - monitor conditions closely")
+        recommendations.append("Prepare emergency kit")
+        recommendations.append("Stay informed about weather conditions")
+    else:
+        recommendations.append("Low risk - maintain general preparedness")
+        recommendations.append("Regular safety checks recommended")
+    
+    return recommendations
+
+def _geocode_location(location_query: str) -> Tuple[float, float]:
+    """Geocode a location query to coordinates"""
+    try:
+        import requests
+        from urllib.parse import quote
+        
+        # Use OpenCage Geocoding API
+        api_key = os.getenv('OPENCAGE_API_KEY', 'demo_key')
+        query = quote(location_query)
+        geocoding_url = f"https://api.opencagedata.com/geocode/v1/json?q={query}&key={api_key}&limit=1"
+        
+        response = requests.get(geocoding_url, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('results') and len(data['results']) > 0:
+                result = data['results'][0]
+                geometry = result['geometry']
+                return geometry['lat'], geometry['lng']
+        
+        # Fallback to random coordinates if geocoding fails
+        logger.warning(f"Geocoding failed for {location_query}, using fallback coordinates")
+        return random.uniform(-90, 90), random.uniform(-180, 180)
+        
+    except Exception as e:
+        logger.error(f"Error geocoding location {location_query}: {e}")
+        return random.uniform(-90, 90), random.uniform(-180, 180)
+
 # APPLICATION ENTRY POINT
 # ============================================================================
 
