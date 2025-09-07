@@ -1,4 +1,4 @@
-# Minimal Requirements for Railway Deployment - No ML Libraries
+# Full Requirements with ML Libraries - Use this for production with real predictions
 # Core Framework
 Flask==3.0.0
 Flask-CORS==4.0.0
@@ -14,9 +14,14 @@ python-dotenv==1.0.0
 # HTTP Client
 requests==2.31.0
 
-# Basic Data Processing (lightweight)
+# Data Processing (compatible versions)
 numpy==1.26.4
 pandas==2.2.1
+
+# Machine Learning Libraries (compatible versions)
+scikit-learn==1.6.1
+torch==2.0.1
+torchvision==0.15.2
 
 # Monitoring and Logging
 structlog==23.1.0
@@ -31,9 +36,3 @@ firebase-admin==6.4.0
 # Additional utilities
 python-dateutil==2.8.2
 google-generativeai==0.7.2
-
-# Note: Excluded heavy ML libraries to reduce image size:
-# - torch (very large ~2GB)
-# - torchvision (large ~500MB)
-# - scikit-learn (large ~100MB)
-# - xgboost (large ~200MB)

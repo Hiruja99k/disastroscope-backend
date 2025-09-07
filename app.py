@@ -10,6 +10,7 @@ import time
 import random
 import math
 from datetime import datetime, timedelta, timezone
+from calibration import Calibrator
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from functools import wraps
@@ -60,6 +61,7 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 logger = setup_logging()
+_calibrator = Calibrator(os.path.join(os.path.dirname(__file__), 'calibration.pkl'))
 
 # Import Firebase and Tinybird services
 try:
@@ -602,6 +604,124 @@ def after_request(response: Response) -> Response:
     return response
 
 # ============================================================================
+# BACKGROUND INGESTION (Tinybird + Live Feeds)
+# ============================================================================
+try:
+    from live_feed_ingester import create_ingester
+    _ingester = None
+    if INTEGRATIONS_AVAILABLE and tinybird_service.is_initialized():
+        try:
+            _ingester = create_ingester(tinybird_service)
+            _ingester.start()
+            logger.info("Live feed ingester started")
+        except Exception as _e:
+            logger.warning(f"Failed to start live feed ingester: {_e}")
+    else:
+        logger.info("Live feed ingester not started: Tinybird unavailable")
+except Exception as _e:
+    logger.warning(f"Live feed ingester not available: {_e}")
+
+# ============================================================================
+# BACKGROUND MODEL REFRESH (Safe, optional)
+# ============================================================================
+def _start_model_refresh_if_enabled():
+    try:
+        enabled = os.getenv('MODEL_REFRESH_ENABLED', 'false').lower() == 'true'
+        interval = int(os.getenv('MODEL_REFRESH_INTERVAL_SECONDS', '21600'))  # 6h
+        if not enabled or not ENHANCED_AI_AVAILABLE:
+            return
+        import threading
+        def _loop():
+            time.sleep(5)
+            while True:
+                try:
+                    enhanced_ai_prediction_service.refresh_models_if_needed()
+                except Exception as e:
+                    logger.warning(f"Model refresh iteration failed: {e}")
+                time.sleep(interval)
+        threading.Thread(target=_loop, name='ModelRefreshLoop', daemon=True).start()
+        logger.info("Model refresh loop started (interval=%ss)", interval)
+    except Exception as e:
+        logger.warning(f"Failed to start model refresh loop: {e}")
+
+_start_model_refresh_if_enabled()
+
+# ============================================================================
+# SMART NOTIFICATIONS (Safe, optional)
+# ============================================================================
+def _start_notifications_if_enabled():
+    try:
+        enabled = os.getenv('SMART_NOTIFICATIONS_ENABLED', 'false').lower() == 'true'
+        if not enabled or not SMART_NOTIFICATIONS_AVAILABLE:
+            return
+        import threading
+        def _loop():
+            time.sleep(5)
+            while True:
+                try:
+                    # If the notification system exposes a run/scan method, call it; else no-op
+                    runner = getattr(smart_notification_system, 'run_once', None)
+                    if callable(runner):
+                        runner()
+                except Exception as e:
+                    logger.warning(f"Smart notification iteration failed: {e}")
+                # Default 5 minutes cadence unless overridden
+                interval = int(os.getenv('SMART_NOTIFICATIONS_INTERVAL_SECONDS', '300'))
+                time.sleep(interval)
+        threading.Thread(target=_loop, name='SmartNotificationsLoop', daemon=True).start()
+        logger.info("Smart notifications loop started")
+    except Exception as e:
+        logger.warning(f"Failed to start smart notifications: {e}")
+
+_start_notifications_if_enabled()
+
+# ============================================================================
+# ADMIN: TRAIN/REFRESH MODELS (No new deps; safe triggers)
+# ============================================================================
+@app.route('/api/admin/train-enhanced', methods=['POST'])
+@rate_limit
+def admin_train_enhanced_models():
+    """Trigger enhanced model (re)training in background (gated by env ADMIN_ENABLED)."""
+    try:
+        if os.getenv('ADMIN_ENABLED', 'false').lower() != 'true':
+            return jsonify({'error': 'Admin disabled'}), 403
+        if not ENHANCED_AI_AVAILABLE:
+            return jsonify({'error': 'Enhanced AI not available'}), 503
+        import threading
+        epochs = int((request.get_json() or {}).get('epochs', 30))
+        def _train():
+            try:
+                enhanced_ai_prediction_service.train_enhanced_models(epochs=epochs)
+                logger.info("Enhanced models training completed")
+            except Exception as e:
+                logger.error(f"Enhanced model training failed: {e}")
+        threading.Thread(target=_train, name='EnhancedModelTrain', daemon=True).start()
+        return jsonify({'started': True, 'epochs': epochs})
+    except Exception as e:
+        logger.error(f"Admin training error: {e}")
+        return jsonify({'error': 'Failed to start training'}), 500
+
+# ============================================================================
+# ANALYTICS: EXPORT TRAINING DATA FROM TINYBIRD (for offline retraining)
+# ============================================================================
+@app.route('/api/analytics/export-training')
+@rate_limit
+def analytics_export_training():
+    try:
+        if not (ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized()):
+            return jsonify({'error': 'Tinybird not configured'}), 503
+        event_type = request.args.get('type')  # optional hazard filter
+        days = int(request.args.get('days', '365'))
+        df = enhanced_tinybird_service.export_training_data(event_type, days)
+        # Return a small preview and schema to keep payload light
+        preview = df.head(50).to_dict(orient='records') if hasattr(df, 'head') else []
+        cols = list(df.columns) if hasattr(df, 'columns') else []
+        return jsonify({'columns': cols, 'preview': preview, 'rows': int(getattr(df, 'shape', [0, 0])[0])})
+    except Exception as e:
+        logger.error(f"Export training data error: {e}")
+        return jsonify({'error': 'Failed to export training data'}), 500
+
+# ============================================================================
 # HEALTH AND STATUS ENDPOINTS
 # ============================================================================
 
@@ -903,11 +1023,79 @@ def predict_disaster_risks():
             location_name=data.get('location_name', 'Unknown')
         )
         
-        # Generate predictions
+        # Prefer enhanced or personalized models when available for stricter, real predictions
+        if AI_MODEL_MANAGER_AVAILABLE and getattr(request, 'user', None):
+            try:
+                user_id = getattr(request.user, 'uid', '') or request.user.get('uid', '')
+                geospatial_data = {
+                    'latitude': pred_request.latitude,
+                    'longitude': pred_request.longitude
+                }
+                weather_data = {
+                    'temperature': pred_request.temperature,
+                    'humidity': pred_request.humidity,
+                    'pressure': pred_request.pressure,
+                    'wind_speed': pred_request.wind_speed,
+                    'precipitation': pred_request.precipitation,
+                }
+                predictions = ai_model_manager.get_personalized_prediction(user_id, weather_data, geospatial_data)
+            except Exception as _e:
+                logger.warning(f"Personalized prediction failed, falling back: {_e}")
+                predictions = prediction_engine.predict_all(pred_request)
+        elif ENHANCED_AI_AVAILABLE:
+            try:
+                geospatial_data = {
+                    'latitude': pred_request.latitude,
+                    'longitude': pred_request.longitude
+                }
+                weather_data = {
+                    'temperature': pred_request.temperature,
+                    'humidity': pred_request.humidity,
+                    'pressure': pred_request.pressure,
+                    'wind_speed': pred_request.wind_speed,
+                    'precipitation': pred_request.precipitation,
+                }
+                predictions = enhanced_ai_prediction_service.predict_enhanced_risks(weather_data, geospatial_data)
+            except Exception as _e:
+                logger.warning(f"Enhanced model prediction failed, falling back: {_e}")
+                predictions = prediction_engine.predict_all(pred_request)
+        else:
         predictions = prediction_engine.predict_all(pred_request)
         
+        # Calibrated confidence via calibrator (falls back to bounded transform)
+        confidences = {k: _calibrator.apply(k, float(v)) for k, v in predictions.items()}
+
+        # Log via enhanced Tinybird schema if available
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            try:
+                from enhanced_tinybird_service import PredictionEvent
+                pe = PredictionEvent(
+                    id=f"pred-{int(time.time()*1000)}",
+                    user_id=getattr(getattr(request, 'user', None), 'uid', '') or '',
+                    event_type='disaster_prediction',
+                    latitude=pred_request.latitude,
+                    longitude=pred_request.longitude,
+                    probability=float(max(predictions.values()) if predictions else 0.0),
+                    confidence=float(max(confidences.values()) if confidences else 0.0),
+                    model_version=Config.MODEL_VERSION,
+                    location_name=pred_request.location_name,
+                    weather_data={
+                        'temperature': pred_request.temperature,
+                        'humidity': pred_request.humidity,
+                        'pressure': pred_request.pressure,
+                        'wind_speed': pred_request.wind_speed,
+                        'precipitation': pred_request.precipitation,
+                    },
+                    geospatial_data={'latitude': pred_request.latitude, 'longitude': pred_request.longitude},
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+                enhanced_tinybird_service.log_prediction_event(pe)
+            except Exception as _e:
+                logger.warning(f"Enhanced Tinybird logging failed: {_e}")
+
         response = {
             'predictions': predictions,
+            'confidence': confidences,
             'metadata': {
                 'model_version': Config.MODEL_VERSION,
                 'prediction_timestamp': datetime.now(timezone.utc).isoformat(),
@@ -916,8 +1104,7 @@ def predict_disaster_risks():
                     'longitude': pred_request.longitude,
                     'name': pred_request.location_name
                 },
-                'model_type': 'heuristic',
-                'confidence': 'high'
+                'model_type': 'heuristic'
             }
         }
         
@@ -1427,7 +1614,7 @@ def global_risk_analysis():
             'urbanization_level': _estimate_urbanization_level(latitude, longitude)
         }
         
-        # Use enhanced prediction engine if available
+        # Use enhanced prediction engine by default when available
         if ENHANCED_AI_AVAILABLE:
             try:
                 # Create weather data for enhanced predictions
@@ -1450,9 +1637,7 @@ def global_risk_analysis():
                 }
                 
                 # Get enhanced predictions
-                enhanced_predictions = enhanced_ai_prediction_service.predict_enhanced_risks(
-                    weather_data, geospatial_data
-                )
+                enhanced_predictions = enhanced_ai_prediction_service.predict_enhanced_risks(weather_data, geospatial_data)
                 
                 # Use enhanced predictions
                 for disaster_type in disaster_types:
@@ -1462,9 +1647,10 @@ def global_risk_analysis():
                     else:
                         risk_level = 0.05  # Default fallback
                     
+                    conf = _calibrator.apply(disaster_key, float(risk_level))
                     analysis['disasters'][disaster_type] = {
                         'risk_level': risk_level,
-                        'confidence': 0.85,  # High confidence for enhanced models
+                        'confidence': conf,
                         'factors': _get_risk_factors(disaster_type, geospatial_data),
                         'recommendations': _get_recommendations(disaster_type, risk_level)
                     }
@@ -1988,6 +2174,39 @@ def predict_enhanced_risks():
     except Exception as e:
         logger.error(f"Error in enhanced prediction: {e}")
         return jsonify({'error': 'Failed to generate enhanced predictions'}), 500
+
+
+@app.route('/api/analytics/model-performance')
+@rate_limit
+def analytics_model_performance():
+    """Tinybird-backed model performance trends for dashboard charts"""
+    try:
+        model_name = request.args.get('model', 'enhanced')
+        days = int(request.args.get('days', '30'))
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            trends = enhanced_tinybird_service.get_model_performance_trends(model_name, days)
+            return jsonify({'model': model_name, 'days': days, 'trends': trends})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"Model performance analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch model performance'}), 500
+
+
+@app.route('/api/analytics/risk-trends')
+@rate_limit
+def analytics_risk_trends():
+    """Tinybird-backed risk trend analysis around a location"""
+    try:
+        lat = float(request.args.get('lat'))
+        lon = float(request.args.get('lon'))
+        days = int(request.args.get('days', '90'))
+        if ENHANCED_TINYBIRD_AVAILABLE and enhanced_tinybird_service.is_initialized():
+            trends = enhanced_tinybird_service.get_risk_trend_analysis((lat, lon), days)
+            return jsonify({'location': {'lat': lat, 'lon': lon}, 'days': days, 'trends': trends})
+        return jsonify({'error': 'Tinybird not configured'}), 503
+    except Exception as e:
+        logger.error(f"Risk trend analytics error: {e}")
+        return jsonify({'error': 'Failed to fetch risk trends'}), 500
 
 @app.route('/api/ai/feedback', methods=['POST'])
 @rate_limit
