@@ -26,14 +26,14 @@ class TinybirdService:
         else:
             logger.info("Tinybird service initialized")
     
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, ndjson: bool = False) -> Dict[str, str]:
         """Get headers for Tinybird API requests"""
         return {
             'Authorization': f'Bearer {self.token}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/x-ndjson' if ndjson else 'application/json'
         }
     
-    def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Optional[Dict]:
+    def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None, *, ndjson: bool = False) -> Optional[Dict]:
         """Make a request to Tinybird API"""
         if not self.initialized:
             logger.warning("Tinybird not initialized. Request skipped.")
@@ -41,12 +41,16 @@ class TinybirdService:
         
         try:
             url = f"{self.base_url}{endpoint}"
-            headers = self._get_headers()
+            headers = self._get_headers(ndjson=ndjson)
             
             if method.upper() == 'GET':
                 response = requests.get(url, headers=headers, timeout=30)
             elif method.upper() == 'POST':
-                response = requests.post(url, headers=headers, json=data, timeout=30)
+                if ndjson:
+                    body = (json.dumps(data) + "\n") if isinstance(data, dict) else ''
+                    response = requests.post(url, headers=headers, data=body, timeout=30)
+                else:
+                    response = requests.post(url, headers=headers, json=data, timeout=30)
             elif method.upper() == 'PUT':
                 response = requests.put(url, headers=headers, json=data, timeout=30)
             elif method.upper() == 'DELETE':
@@ -54,7 +58,13 @@ class TinybirdService:
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                if 400 <= response.status_code < 500:
+                    logger.warning(f"Tinybird client error {response.status_code}: {getattr(response, 'text', '')[:200]}")
+                    return None
+                raise
             return response.json()
             
         except requests.exceptions.RequestException as e:
@@ -67,87 +77,72 @@ class TinybirdService:
     # User Management Methods
     def create_user_event(self, user_data: Dict[str, Any]) -> bool:
         """Create a user event in Tinybird"""
-        event_data = {
-            'name': 'user_created',
-            'data': {
-                'uid': user_data.get('uid'),
-                'email': user_data.get('email'),
-                'display_name': user_data.get('display_name', ''),
-                'photo_url': user_data.get('photo_url', ''),
-                'email_verified': user_data.get('email_verified', False),
-                'created_at': user_data.get('created_at', datetime.now(timezone.utc).isoformat()),
-                'last_login_at': user_data.get('last_login_at', datetime.now(timezone.utc).isoformat()),
-                'theme': user_data.get('theme', 'light'),
-                'notifications': user_data.get('notifications', True),
-                'language': user_data.get('language', 'en')
-            }
+        event_record = {
+            'uid': user_data.get('uid'),
+            'email': user_data.get('email'),
+            'display_name': user_data.get('display_name', ''),
+            'photo_url': user_data.get('photo_url', ''),
+            'email_verified': user_data.get('email_verified', False),
+            'created_at': user_data.get('created_at', datetime.now(timezone.utc).isoformat()),
+            'last_login_at': user_data.get('last_login_at', datetime.now(timezone.utc).isoformat()),
+            'theme': user_data.get('theme', 'light'),
+            'notifications': user_data.get('notifications', True),
+            'language': user_data.get('language', 'en')
         }
         
-        result = self._make_request('POST', '/v0/events', event_data)
+        result = self._make_request('POST', '/v0/events?name=user_created', event_record, ndjson=True)
         return result is not None
     
     def update_user_event(self, uid: str, updates: Dict[str, Any]) -> bool:
         """Update user event in Tinybird"""
-        event_data = {
-            'name': 'user_updated',
-            'data': {
-                'uid': uid,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
-                **updates
-            }
+        event_record = {
+            'uid': uid,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            **updates
         }
         
-        result = self._make_request('POST', '/v0/events', event_data)
+        result = self._make_request('POST', '/v0/events?name=user_updated', event_record, ndjson=True)
         return result is not None
     
     def track_user_login(self, uid: str, email: str) -> bool:
         """Track user login event"""
-        event_data = {
-            'name': 'user_login',
-            'data': {
-                'uid': uid,
-                'email': email,
-                'login_at': datetime.now(timezone.utc).isoformat()
-            }
+        event_record = {
+            'uid': uid,
+            'email': email,
+            'login_at': datetime.now(timezone.utc).isoformat()
         }
         
-        result = self._make_request('POST', '/v0/events', event_data)
+        result = self._make_request('POST', '/v0/events?name=user_login', event_record, ndjson=True)
         return result is not None
     
     def delete_user_event(self, uid: str) -> bool:
         """Delete user event in Tinybird"""
-        event_data = {
-            'name': 'user_deleted',
-            'data': {
-                'uid': uid,
-                'deleted_at': datetime.now(timezone.utc).isoformat()
-            }
+        event_record = {
+            'uid': uid,
+            'deleted_at': datetime.now(timezone.utc).isoformat()
         }
         
-        result = self._make_request('POST', '/v0/events', event_data)
+        result = self._make_request('POST', '/v0/events?name=user_deleted', event_record, ndjson=True)
         return result is not None
     
     # Disaster Data Methods
     def create_disaster_event(self, event_data: Dict[str, Any]) -> bool:
         """Create a disaster event in Tinybird"""
-        event = {
-            'name': 'disaster_event',
-            'data': {
-                'id': event_data.get('id'),
-                'type': event_data.get('type'),
-                'severity': event_data.get('severity'),
-                'latitude': event_data.get('latitude'),
-                'longitude': event_data.get('longitude'),
-                'timestamp': event_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
-                'description': event_data.get('description', ''),
-                'user_id': event_data.get('user_id', ''),
-                'magnitude': event_data.get('magnitude', 0),
-                'source': event_data.get('source', 'api'),
-                'confidence': event_data.get('confidence', 0.5)
-            }
+        event_record = {
+            'id': event_data.get('id'),
+            'type': event_data.get('type'),
+            'severity': event_data.get('severity'),
+            'latitude': event_data.get('latitude'),
+            'longitude': event_data.get('longitude'),
+            'timestamp': event_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
+            'description': event_data.get('description', ''),
+            'user_id': event_data.get('user_id', ''),
+            'magnitude': event_data.get('magnitude', 0),
+            'source': event_data.get('source', 'api'),
+            'confidence': event_data.get('confidence', 0.5)
         }
         
-        result = self._make_request('POST', '/v0/events', event)
+        result = self._make_request('POST', '/v0/events?name=disaster_event', event_record, ndjson=True)
         return result is not None
     
     def get_disaster_events(self, limit: int = 100, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -190,44 +185,38 @@ class TinybirdService:
     # Real-time Data Methods
     def create_prediction_event(self, prediction_data: Dict[str, Any]) -> bool:
         """Create a prediction event in Tinybird"""
-        event = {
-            'name': 'disaster_prediction',
-            'data': {
-                'id': prediction_data.get('id'),
-                'event_type': prediction_data.get('event_type'),
-                'latitude': prediction_data.get('latitude'),
-                'longitude': prediction_data.get('longitude'),
-                'probability': prediction_data.get('probability'),
-                'confidence': prediction_data.get('confidence'),
-                'timestamp': prediction_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
-                'model_version': prediction_data.get('model_version', '2.0.0'),
-                'user_id': prediction_data.get('user_id', ''),
-                'location_name': prediction_data.get('location_name', '')
-            }
+        event_record = {
+            'id': prediction_data.get('id'),
+            'event_type': prediction_data.get('event_type'),
+            'latitude': prediction_data.get('latitude'),
+            'longitude': prediction_data.get('longitude'),
+            'probability': prediction_data.get('probability'),
+            'confidence': prediction_data.get('confidence'),
+            'timestamp': prediction_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
+            'model_version': prediction_data.get('model_version', '2.0.0'),
+            'user_id': prediction_data.get('user_id', ''),
+            'location_name': prediction_data.get('location_name', '')
         }
         
-        result = self._make_request('POST', '/v0/events', event)
+        result = self._make_request('POST', '/v0/events?name=disaster_prediction', event_record, ndjson=True)
         return result is not None
     
     def create_weather_event(self, weather_data: Dict[str, Any]) -> bool:
         """Create a weather event in Tinybird"""
-        event = {
-            'name': 'weather_data',
-            'data': {
-                'location': weather_data.get('location'),
-                'latitude': weather_data.get('latitude'),
-                'longitude': weather_data.get('longitude'),
-                'temperature': weather_data.get('temperature'),
-                'humidity': weather_data.get('humidity'),
-                'pressure': weather_data.get('pressure'),
-                'wind_speed': weather_data.get('wind_speed'),
-                'precipitation': weather_data.get('precipitation'),
-                'timestamp': weather_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
-                'user_id': weather_data.get('user_id', '')
-            }
+        event_record = {
+            'location': weather_data.get('location'),
+            'latitude': weather_data.get('latitude'),
+            'longitude': weather_data.get('longitude'),
+            'temperature': weather_data.get('temperature'),
+            'humidity': weather_data.get('humidity'),
+            'pressure': weather_data.get('pressure'),
+            'wind_speed': weather_data.get('wind_speed'),
+            'precipitation': weather_data.get('precipitation'),
+            'timestamp': weather_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
+            'user_id': weather_data.get('user_id', '')
         }
         
-        result = self._make_request('POST', '/v0/events', event)
+        result = self._make_request('POST', '/v0/events?name=weather_data', event_record, ndjson=True)
         return result is not None
     
     def get_realtime_metrics(self) -> Dict[str, Any]:

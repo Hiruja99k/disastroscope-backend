@@ -67,7 +67,7 @@ class EnhancedTinybirdService:
     """Enhanced Tinybird service with AI model integration"""
     
     def __init__(self):
-        self.base_url = os.getenv('TINYBIRD_API_URL', 'https://cloud.tinybird.co/gcp/europe-west3/DisastroScope')
+        self.base_url = os.getenv('TINYBIRD_API_URL', 'https://api.tinybird.co')
         self.token = os.getenv('TINYBIRD_TOKEN', '')
         self.workspace_id = os.getenv('TINYBIRD_WORKSPACE_ID', '')
         self.initialized = bool(self.token and self.workspace_id)

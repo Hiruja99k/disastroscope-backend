@@ -114,6 +114,15 @@ except ImportError as e:
     logger.warning(f"Smart Notification System not available: {e}")
     SMART_NOTIFICATIONS_AVAILABLE = False
 
+# Import Disaster Management Service
+try:
+    from disaster_management_service import disaster_management_service
+    DISASTER_MANAGEMENT_AVAILABLE = True
+    logger.info("Disaster Management Service loaded successfully")
+except ImportError as e:
+    logger.warning(f"Disaster Management Service not available: {e}")
+    DISASTER_MANAGEMENT_AVAILABLE = False
+
 # ============================================================================
 # DATA MODELS
 # ============================================================================
@@ -1769,29 +1778,57 @@ def global_risk_analysis():
                     'atmospheric_stability': 0.5,
                     'moisture_content': 0.5
                 }
-                
+
                 # Get enhanced predictions
                 enhanced_predictions = enhanced_ai_prediction_service.predict_enhanced_risks(weather_data, geospatial_data)
-                
-                # Use enhanced predictions
+
+                # Build response using the same schema as fallback
                 for disaster_type in disaster_types:
                     disaster_key = disaster_type.lower().replace(' ', '_')
-                    if disaster_key in enhanced_predictions:
-                        risk_level = enhanced_predictions[disaster_key]
+                    predicted = float(enhanced_predictions.get(disaster_key, 0.05))
+                    risk_score = max(0.01, min(0.90, predicted))
+
+                    if risk_score > 0.7:
+                        risk_level = 'Critical'
+                        color = 'red'
+                        color_hex = '#ef4444'
+                    elif risk_score > 0.5:
+                        risk_level = 'High'
+                        color = 'orange'
+                        color_hex = '#f97316'
+                    elif risk_score > 0.3:
+                        risk_level = 'Moderate'
+                        color = 'yellow'
+                        color_hex = '#eab308'
                     else:
-                        risk_level = 0.05  # Default fallback
-                    
-                    conf = _calibrator.apply(disaster_key, float(risk_level))
-                    analysis['disasters'][disaster_type] = {
+                        risk_level = 'Low'
+                        color = 'green'
+                        color_hex = '#22c55e'
+
+                    risk_analysis['disasters'][disaster_type] = {
+                        'risk_score': round(risk_score * 100, 1),
                         'risk_level': risk_level,
-                        'confidence': conf,
+                        'color': color,
+                        'color_hex': color_hex,
+                        'probability': round(risk_score * 100, 1),
+                        'severity': risk_level,
                         'factors': _get_risk_factors(disaster_type, geospatial_data),
-                        'recommendations': _get_recommendations(disaster_type, risk_level)
+                        'description': f"{risk_level} risk of {disaster_type.lower()} in this region",
+                        'recommendations': _get_recommendations(disaster_type, risk_score),
+                        'last_updated': datetime.now(timezone.utc).isoformat()
                     }
-                
+
+                all_risks = [d['risk_score'] for d in risk_analysis['disasters'].values()]
+                composite_risk = sum(all_risks) / len(all_risks)
+                risk_analysis['composite_risk'] = {
+                    'score': round(composite_risk, 1),
+                    'level': 'Low' if composite_risk < 30 else 'Moderate' if composite_risk < 50 else 'High' if composite_risk < 70 else 'Critical',
+                    'trend': random.choice(['increasing', 'stable', 'decreasing'])
+                }
+
                 logger.info("Used enhanced AI models for global risk analysis")
-                return jsonify(analysis)
-                
+                return jsonify(risk_analysis)
+
             except Exception as e:
                 logger.error(f"Enhanced prediction failed, using fallback: {e}")
         
@@ -3055,6 +3092,164 @@ def _geocode_location(location_query: str) -> Tuple[float, float]:
     except Exception as e:
         logger.error(f"Error geocoding location {location_query}: {e}")
         return random.uniform(-90, 90), random.uniform(-180, 180)
+
+# ============================================================================
+# DISASTER MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/disaster-management/disasters', methods=['GET'])
+@rate_limit
+def get_disaster_reports():
+    """Get all disaster reports with optional filtering"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        # Get query parameters
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+        status = request.args.get('status')
+        type_filter = request.args.get('type')
+        severity = request.args.get('severity')
+        
+        disasters = disaster_management_service.get_all_disasters(
+            limit=limit,
+            offset=offset,
+            status=status,
+            type=type_filter,
+            severity=severity
+        )
+        
+        return jsonify({
+            'disasters': disasters,
+            'total': len(disasters),
+            'limit': limit,
+            'offset': offset
+        })
+    except Exception as e:
+        logger.error(f"Error getting disaster reports: {e}")
+        return jsonify({'error': 'Failed to get disaster reports'}), 500
+
+@app.route('/api/disaster-management/disasters/<disaster_id>', methods=['GET'])
+@rate_limit
+def get_disaster_report(disaster_id):
+    """Get a specific disaster report by ID"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        disaster = disaster_management_service.get_disaster_by_id(disaster_id)
+        if not disaster:
+            return jsonify({'error': 'Disaster report not found'}), 404
+        
+        return jsonify(disaster)
+    except Exception as e:
+        logger.error(f"Error getting disaster report {disaster_id}: {e}")
+        return jsonify({'error': 'Failed to get disaster report'}), 500
+
+@app.route('/api/disaster-management/disasters', methods=['POST'])
+@rate_limit
+def create_disaster_report():
+    """Create a new disaster report"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate required fields
+        required_fields = ['title', 'type', 'location', 'description']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        disaster = disaster_management_service.create_disaster(data)
+        if not disaster:
+            return jsonify({'error': 'Failed to create disaster report'}), 500
+        
+        return jsonify(disaster), 201
+    except Exception as e:
+        logger.error(f"Error creating disaster report: {e}")
+        return jsonify({'error': 'Failed to create disaster report'}), 500
+
+@app.route('/api/disaster-management/disasters/<disaster_id>', methods=['PUT'])
+@rate_limit
+def update_disaster_report(disaster_id):
+    """Update an existing disaster report"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        disaster = disaster_management_service.update_disaster(disaster_id, data)
+        if not disaster:
+            return jsonify({'error': 'Disaster report not found or update failed'}), 404
+        
+        return jsonify(disaster)
+    except Exception as e:
+        logger.error(f"Error updating disaster report {disaster_id}: {e}")
+        return jsonify({'error': 'Failed to update disaster report'}), 500
+
+@app.route('/api/disaster-management/disasters/<disaster_id>', methods=['DELETE'])
+@rate_limit
+def delete_disaster_report(disaster_id):
+    """Delete a disaster report"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        success = disaster_management_service.delete_disaster(disaster_id)
+        if not success:
+            return jsonify({'error': 'Disaster report not found'}), 404
+        
+        return jsonify({'message': 'Disaster report deleted successfully'})
+    except Exception as e:
+        logger.error(f"Error deleting disaster report {disaster_id}: {e}")
+        return jsonify({'error': 'Failed to delete disaster report'}), 500
+
+@app.route('/api/disaster-management/disasters/<disaster_id>/updates', methods=['POST'])
+@rate_limit
+def add_disaster_update(disaster_id):
+    """Add an update to a disaster report"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        data = request.get_json()
+        if not data or not data.get('message') or not data.get('author'):
+            return jsonify({'error': 'Missing required fields: message, author'}), 400
+        
+        disaster = disaster_management_service.add_disaster_update(
+            disaster_id, 
+            data['message'], 
+            data['author']
+        )
+        if not disaster:
+            return jsonify({'error': 'Disaster report not found'}), 404
+        
+        return jsonify(disaster)
+    except Exception as e:
+        logger.error(f"Error adding update to disaster report {disaster_id}: {e}")
+        return jsonify({'error': 'Failed to add disaster update'}), 500
+
+@app.route('/api/disaster-management/statistics', methods=['GET'])
+@rate_limit
+def get_disaster_statistics():
+    """Get disaster management statistics"""
+    try:
+        if not DISASTER_MANAGEMENT_AVAILABLE:
+            return jsonify({'error': 'Disaster management service not available'}), 503
+        
+        stats = disaster_management_service.get_disaster_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f"Error getting disaster statistics: {e}")
+        return jsonify({'error': 'Failed to get disaster statistics'}), 500
 
 # APPLICATION ENTRY POINT
 # ============================================================================
